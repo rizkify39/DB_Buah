@@ -1,1 +1,284 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tentang - FreshCheck</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navigation */
+        nav {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: #667eea;
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 120px 0 80px;
+            min-height: 100vh;
+        }
+
+        .content-card {
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+        }
+
+        .page-title {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 3rem;
+            font-size: 2.5rem;
+        }
+
+        .about-section {
+            margin-bottom: 3rem;
+        }
+
+        .about-section h2 {
+            color: #333;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .about-section p {
+            line-height: 1.8;
+            color: #666;
+            margin-bottom: 1rem;
+        }
+
+        .features-list {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .features-list li {
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .tech-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .tech-item {
+            text-align: center;
+            padding: 1.5rem;
+            background: #f8f9fa;
+            border-radius: 10px;
+            transition: transform 0.3s ease;
+        }
+
+        .tech-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .tech-icon {
+            font-size: 2.5rem;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+            
+            .content-card {
+                padding: 2rem 1.5rem;
+            }
+            
+            .page-title {
+                font-size: 2rem;
+            }
+            
+            .tech-stack {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="container nav-container">
+            <div class="logo">
+                <i class="fas fa-apple-alt"></i>
+                FreshCheck
+            </div>
+            <ul class="nav-links">
+                <li><a href="/"><i class="fas fa-home"></i> Beranda</a></li>
+                <li><a href="/classification"><i class="fas fa-camera"></i> Klasifikasi</a></li>
+                <li><a href="/information"><i class="fas fa-info-circle"></i> Informasi</a></li>
+                <li><a href="/about" class="active"><i class="fas fa-users"></i> Tentang</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container">
+            <div class="content-card">
+                <h1 class="page-title">Tentang FreshCheck</h1>
+                
+                <div class="about-section">
+                    <h2><i class="fas fa-info-circle"></i> Apa itu FreshCheck?</h2>
+                    <p>
+                        FreshCheck adalah platform cerdas yang saya buat menggunakan teknologi Artificial Intelligence 
+                        untuk mengklasifikasikan tingkat kesegaran buah dan sayuran. Dengan memanfaatkan 
+                        model YOLO (You Only Look Once), sistem dapat mendeteksi dan menganalisis 
+                        kondisi buah dan sayuran secara real-time melalui gambar.
+                    </p>
+                    <p>
+                        Tujuan saya adalah membantu masyarakat dalam memilih buah dan sayuran yang segar 
+                        dan berkualitas, serta memberikan edukasi tentang ciri-ciri kesegaran dan tips 
+                        penyimpanan yang tepat.
+                    </p>
+                </div>
+
+                <div class="about-section">
+                    <h2><i class="fas fa-bullseye"></i> Misi saya</h2>
+                    <p>
+                        Misi saya adalah mengurangi pemborosan makanan dengan membantu konsumen 
+                        membuat keputusan yang lebih baik dalam memilih buah dan sayuran, serta 
+                        meningkatkan kesadaran akan pentingnya mengonsumsi produk segar untuk 
+                        kesehatan yang optimal.
+                    </p>
+                </div>
+
+                <div class="about-section">
+                    <h2><i class="fas fa-star"></i> Fitur Unggulan</h2>
+                    <ul class="features-list">
+                        <li>
+                            <strong>Deteksi Real-time:</strong> Analisis gambar secara instan dengan akurasi tinggi
+                        </li>
+                        <li>
+                            <strong>12 Jenis Produk:</strong> Mendukung apel, pisang, jeruk, tomat, paprika, dan pare
+                        </li>
+                        <li>
+                            <strong>Informasi Lengkap:</strong> Panduan ciri-ciri kesegaran dan tips penyimpanan
+                        </li>
+                        <li>
+                            <strong>Antarmuka Responsif:</strong> Dapat diakses dari berbagai perangkat
+                        </li>
+                        <li>
+                            <strong>Teknologi AI Modern:</strong> Menggunakan model YOLO terbaru untuk deteksi objek
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="about-section">
+                    <h2><i class="fas fa-cogs"></i> Teknologi yang Digunakan</h2>
+                    <div class="tech-stack">
+                        <div class="tech-item">
+                            <div class="tech-icon">
+                                <i class="fab fa-python"></i>
+                            </div>
+                            <h3>Python</h3>
+                            <p>Bahasa pemrograman utama</p>
+                        </div>
+                        <div class="tech-item">
+                            <div class="tech-icon">
+                                <i class="fas fa-flask"></i>
+                            </div>
+                            <h3>Flask</h3>
+                            <p>Framework web backend</p>
+                        </div>
+                        <div class="tech-item">
+                            <div class="tech-icon">
+                                <i class="fas fa-brain"></i>
+                            </div>
+                            <h3>YOLO</h3>
+                            <p>Model deteksi objek</p>
+                        </div>
+                        <div class="tech-item">
+                            <div class="tech-icon">
+                                <i class="fab fa-html5"></i>
+                            </div>
+                            <h3>HTML5/CSS3</h3>
+                            <p>Frontend modern</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="about-section">
+                    <h2><i class="fas fa-hands-helping"></i> Kontribusi</h2>
+                    <p>
+                        FreshCheck dibuat untuk kepentingan edukasi dan penelitian dalam 
+                        bidang computer vision dan artificial intelligence. 
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
