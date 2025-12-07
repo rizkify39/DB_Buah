@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informasi - FreshCheck</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navigation */
+        nav {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: #667eea;
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 120px 0 80px;
+            min-height: 100vh;
+        }
+
+        .page-title {
+            text-align: center;
+            color: white;
+            margin-bottom: 3rem;
+            font-size: 2.5rem;
+        }
+
+        /* Category Sections */
+        .category-section {
+            margin-bottom: 3rem;
+        }
+
+        .category-title {
+            color: white;
+            font-size: 2rem;
+            margin-bottom: 2rem;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            padding: 1rem;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+
+        /* Information Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .info-card {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .info-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .info-header {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .fruit-icon {
+            font-size: 3rem;
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .info-title-container {
+            flex: 1;
+        }
+
+        .info-title {
+            font-size: 1.3rem;
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 0.3rem;
+        }
+
+        .freshness-badge {
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .fresh-badge {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .stale-badge {
+            background: #f44336;
+            color: white;
+        }
+
+        .fresh {
+            border-left: 4px solid #4CAF50;
+        }
+
+        .stale {
+            border-left: 4px solid #f44336;
+        }
+
+        .info-description {
+            color: #666;
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+
+        .info-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .section-title {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .info-list {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .info-list li {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #f0f0f0;
+            display: flex;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .info-list li:before {
+            content: "•";
+            color: #667eea;
+            font-weight: bold;
+            margin-right: 0.5rem;
+        }
+
+        .warning {
+            background: #fff3e0;
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid #ff9800;
+            margin: 1rem 0;
+        }
+
+        .benefits {
+            background: #e8f5e8;
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid #4CAF50;
+            margin: 1rem 0;
+        }
+
+        .storage-tips {
+            background: #e3f2fd;
+            padding: 1rem;
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+            margin: 1rem 0;
+        }
+
+        /* Comparison Section */
+        .comparison-section {
+            background: white;
+            border-radius: 15px;
+            padding: 2rem;
+            margin: 2rem 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .comparison-title {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 2rem;
+            font-size: 1.5rem;
+        }
+
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        .comparison-item {
+            text-align: center;
+            padding: 1.5rem;
+            border-radius: 10px;
+            transition: transform 0.3s ease;
+        }
+
+        .comparison-item:hover {
+            transform: translateY(-5px);
+        }
+
+        .comparison-fresh {
+            background: #e8f5e8;
+            border: 2px solid #4CAF50;
+        }
+
+        .comparison-stale {
+            background: #ffebee;
+            border: 2px solid #f44336;
+        }
+
+        .comparison-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+            
+            .page-title {
+                font-size: 2rem;
+            }
+            
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .info-card {
+                padding: 1.5rem;
+            }
+            
+            .comparison-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .info-header {
+                flex-direction: column;
+                text-align: center;
+            }
+            
+            .fruit-icon {
+                margin: 0 auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="container nav-container">
+            <div class="logo">
+                <i class="fas fa-apple-alt"></i>
+                FreshCheck
+            </div>
+            <ul class="nav-links">
+                <li><a href="/"><i class="fas fa-home"></i> Beranda</a></li>
+                <li><a href="/classification"><i class="fas fa-camera"></i> Klasifikasi</a></li>
+                <li><a href="/information" class="active"><i class="fas fa-info-circle"></i> Informasi</a></li>
+                <li><a href="/about"><i class="fas fa-users"></i> Tentang</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container">
+            <h1 class="page-title">
+                <i class="fas fa-info-circle"></i>
+                Informasi Kesegaran Buah & Sayuran
+            </h1>
+
+            <!-- Apel Section -->
+            <div class="category-section">
+                <h2 class="category-title">🍎 Apel</h2>
+                <div class="info-grid">
+                    {% for class_name, info in freshness_info.items() if 'Apple' in class_name %}
+                    <div class="info-card {% if 'Fresh' in class_name %}fresh{% else %}stale{% endif %}">
+                        <div class="info-header">
+                            <div class="fruit-icon">
+                                {{ info.icon }}
+                            </div>
+                            <div class="info-title-container">
+                                <h2 class="info-title">{{ info.name }}</h2>
+                                <span class="freshness-badge {% if 'Fresh' in class_name %}fresh-badge{% else %}stale-badge{% endif %}">
+                                    {% if 'Fresh' in class_name %}Segar{% else %}Tidak Segar{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="info-description">{{ info.description }}</p>
+                        
+                        <div class="info-section">
+                            <h3 class="section-title">
+                                <i class="fas fa-list"></i>
+                                Ciri-ciri
+                            </h3>
+                            <ul class="info-list">
+                                {% for characteristic in info.characteristics %}
+                                <li>{{ characteristic }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        {% if info.storage_tips %}
+                        <div class="storage-tips">
+                            <h3 class="section-title">
+                                <i class="fas fa-box"></i>
+                                Tips Penyimpanan
+                            </h3>
+                            <ul class="info-list">
+                                {% for tip in info.storage_tips %}
+                                <li>{{ tip }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.benefits %}
+                        <div class="benefits">
+                            <h3 class="section-title">
+                                <i class="fas fa-heart"></i>
+                                Manfaat Kesehatan
+                            </h3>
+                            <ul class="info-list">
+                                {% for benefit in info.benefits %}
+                                <li>{{ benefit }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.warning %}
+                        <div class="warning">
+                            <h3 class="section-title">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                Peringatan
+                            </h3>
+                            <p>{{ info.warning }}</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Pisang Section -->
+            <div class="category-section">
+                <h2 class="category-title">🍌 Pisang</h2>
+                <div class="info-grid">
+                    {% for class_name, info in freshness_info.items() if 'Banana' in class_name %}
+                    <div class="info-card {% if 'Fresh' in class_name %}fresh{% else %}stale{% endif %}">
+                        <div class="info-header">
+                            <div class="fruit-icon">
+                                {{ info.icon }}
+                            </div>
+                            <div class="info-title-container">
+                                <h2 class="info-title">{{ info.name }}</h2>
+                                <span class="freshness-badge {% if 'Fresh' in class_name %}fresh-badge{% else %}stale-badge{% endif %}">
+                                    {% if 'Fresh' in class_name %}Segar{% else %}Tidak Segar{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="info-description">{{ info.description }}</p>
+                        
+                        <div class="info-section">
+                            <h3 class="section-title">
+                                <i class="fas fa-list"></i>
+                                Ciri-ciri
+                            </h3>
+                            <ul class="info-list">
+                                {% for characteristic in info.characteristics %}
+                                <li>{{ characteristic }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        {% if info.storage_tips %}
+                        <div class="storage-tips">
+                            <h3 class="section-title">
+                                <i class="fas fa-box"></i>
+                                Tips Penyimpanan
+                            </h3>
+                            <ul class="info-list">
+                                {% for tip in info.storage_tips %}
+                                <li>{{ tip }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.benefits %}
+                        <div class="benefits">
+                            <h3 class="section-title">
+                                <i class="fas fa-heart"></i>
+                                Manfaat Kesehatan
+                            </h3>
+                            <ul class="info-list">
+                                {% for benefit in info.benefits %}
+                                <li>{{ benefit }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Jeruk Section -->
+            <div class="category-section">
+                <h2 class="category-title">🍊 Jeruk</h2>
+                <div class="info-grid">
+                    {% for class_name, info in freshness_info.items() if 'Orange' in class_name %}
+                    <div class="info-card {% if 'Fresh' in class_name %}fresh{% else %}stale{% endif %}">
+                        <div class="info-header">
+                            <div class="fruit-icon">
+                                {{ info.icon }}
+                            </div>
+                            <div class="info-title-container">
+                                <h2 class="info-title">{{ info.name }}</h2>
+                                <span class="freshness-badge {% if 'Fresh' in class_name %}fresh-badge{% else %}stale-badge{% endif %}">
+                                    {% if 'Fresh' in class_name %}Segar{% else %}Tidak Segar{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="info-description">{{ info.description }}</p>
+                        
+                        <div class="info-section">
+                            <h3 class="section-title">
+                                <i class="fas fa-list"></i>
+                                Ciri-ciri
+                            </h3>
+                            <ul class="info-list">
+                                {% for characteristic in info.characteristics %}
+                                <li>{{ characteristic }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        {% if info.storage_tips %}
+                        <div class="storage-tips">
+                            <h3 class="section-title">
+                                <i class="fas fa-box"></i>
+                                Tips Penyimpanan
+                            </h3>
+                            <ul class="info-list">
+                                {% for tip in info.storage_tips %}
+                                <li>{{ tip }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.benefits %}
+                        <div class="benefits">
+                            <h3 class="section-title">
+                                <i class="fas fa-heart"></i>
+                                Manfaat Kesehatan
+                            </h3>
+                            <ul class="info-list">
+                                {% for benefit in info.benefits %}
+                                <li>{{ benefit }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Tomat Section -->
+            <div class="category-section">
+                <h2 class="category-title">🍅 Tomat</h2>
+                <div class="info-grid">
+                    {% for class_name, info in freshness_info.items() if 'Tomato' in class_name %}
+                    <div class="info-card {% if 'Fresh' in class_name %}fresh{% else %}stale{% endif %}">
+                        <div class="info-header">
+                            <div class="fruit-icon">
+                                {{ info.icon }}
+                            </div>
+                            <div class="info-title-container">
+                                <h2 class="info-title">{{ info.name }}</h2>
+                                <span class="freshness-badge {% if 'Fresh' in class_name %}fresh-badge{% else %}stale-badge{% endif %}">
+                                    {% if 'Fresh' in class_name %}Segar{% else %}Tidak Segar{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="info-description">{{ info.description }}</p>
+                        
+                        <div class="info-section">
+                            <h3 class="section-title">
+                                <i class="fas fa-list"></i>
+                                Ciri-ciri
+                            </h3>
+                            <ul class="info-list">
+                                {% for characteristic in info.characteristics %}
+                                <li>{{ characteristic }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        {% if info.storage_tips %}
+                        <div class="storage-tips">
+                            <h3 class="section-title">
+                                <i class="fas fa-box"></i>
+                                Tips Penyimpanan
+                            </h3>
+                            <ul class="info-list">
+                                {% for tip in info.storage_tips %}
+                                <li>{{ tip }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.benefits %}
+                        <div class="benefits">
+                            <h3 class="section-title">
+                                <i class="fas fa-heart"></i>
+                                Manfaat Kesehatan
+                            </h3>
+                            <ul class="info-list">
+                                {% for benefit in info.benefits %}
+                                <li>{{ benefit }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Paprika Section -->
+            <div class="category-section">
+                <h2 class="category-title">🫑 Paprika</h2>
+                <div class="info-grid">
+                    {% for class_name, info in freshness_info.items() if 'Capsicum' in class_name %}
+                    <div class="info-card {% if 'Fresh' in class_name %}fresh{% else %}stale{% endif %}">
+                        <div class="info-header">
+                            <div class="fruit-icon">
+                                {{ info.icon }}
+                            </div>
+                            <div class="info-title-container">
+                                <h2 class="info-title">{{ info.name }}</h2>
+                                <span class="freshness-badge {% if 'Fresh' in class_name %}fresh-badge{% else %}stale-badge{% endif %}">
+                                    {% if 'Fresh' in class_name %}Segar{% else %}Tidak Segar{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="info-description">{{ info.description }}</p>
+                        
+                        <div class="info-section">
+                            <h3 class="section-title">
+                                <i class="fas fa-list"></i>
+                                Ciri-ciri
+                            </h3>
+                            <ul class="info-list">
+                                {% for characteristic in info.characteristics %}
+                                <li>{{ characteristic }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        {% if info.storage_tips %}
+                        <div class="storage-tips">
+                            <h3 class="section-title">
+                                <i class="fas fa-box"></i>
+                                Tips Penyimpanan
+                            </h3>
+                            <ul class="info-list">
+                                {% for tip in info.storage_tips %}
+                                <li>{{ tip }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.benefits %}
+                        <div class="benefits">
+                            <h3 class="section-title">
+                                <i class="fas fa-heart"></i>
+                                Manfaat Kesehatan
+                            </h3>
+                            <ul class="info-list">
+                                {% for benefit in info.benefits %}
+                                <li>{{ benefit }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Pare Section -->
+            <div class="category-section">
+                <h2 class="category-title">🥒 Pare</h2>
+                <div class="info-grid">
+                    {% for class_name, info in freshness_info.items() if 'Bitter Gourd' in class_name %}
+                    <div class="info-card {% if 'Fresh' in class_name %}fresh{% else %}stale{% endif %}">
+                        <div class="info-header">
+                            <div class="fruit-icon">
+                                {{ info.icon }}
+                            </div>
+                            <div class="info-title-container">
+                                <h2 class="info-title">{{ info.name }}</h2>
+                                <span class="freshness-badge {% if 'Fresh' in class_name %}fresh-badge{% else %}stale-badge{% endif %}">
+                                    {% if 'Fresh' in class_name %}Segar{% else %}Tidak Segar{% endif %}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <p class="info-description">{{ info.description }}</p>
+                        
+                        <div class="info-section">
+                            <h3 class="section-title">
+                                <i class="fas fa-list"></i>
+                                Ciri-ciri
+                            </h3>
+                            <ul class="info-list">
+                                {% for characteristic in info.characteristics %}
+                                <li>{{ characteristic }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        
+                        {% if info.storage_tips %}
+                        <div class="storage-tips">
+                            <h3 class="section-title">
+                                <i class="fas fa-box"></i>
+                                Tips Penyimpanan
+                            </h3>
+                            <ul class="info-list">
+                                {% for tip in info.storage_tips %}
+                                <li>{{ tip }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                        
+                        {% if info.benefits %}
+                        <div class="benefits">
+                            <h3 class="section-title">
+                                <i class="fas fa-heart"></i>
+                                Manfaat Kesehatan
+                            </h3>
+                            <ul class="info-list">
+                                {% for benefit in info.benefits %}
+                                <li>{{ benefit }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Comparison Section -->
+            <div class="comparison-section">
+                <h2 class="comparison-title">
+                    <i class="fas fa-balance-scale"></i>
+                    Perbandingan Kesegaran
+                </h2>
+                <div class="comparison-grid">
+                    <div class="comparison-item comparison-fresh">
+                        <div class="comparison-icon">✅</div>
+                        <h3>Ciri-ciri Segar</h3>
+                        <ul class="info-list">
+                            <li>Warna cerah dan merata</li>
+                            <li>Tekstur padat dan keras</li>
+                            <li>Aroma segar khas buah</li>
+                            <li>Kulit mengkilap dan halus</li>
+                            <li>Tangkai masih menempel kuat</li>
+                        </ul>
+                    </div>
+                    <div class="comparison-item comparison-stale">
+                        <div class="comparison-icon">❌</div>
+                        <h3>Ciri-ciri Tidak Segar</h3>
+                        <ul class="info-list">
+                            <li>Warna kusam atau ada bercak</li>
+                            <li>Tekstur lembek atau keriput</li>
+                            <li>Aroma asam atau tidak sedap</li>
+                            <li>Kulit kusam dan tidak rata</li>
+                            <li>Tangkai mudah lepas atau kering</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
