@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Klasifikasi - FreshCheck</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* Navigation */
+        nav {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 1rem 0;
+            position: fixed;
+            width: 100%;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 20px rgba(0,0,0,0.1);
+        }
+
+        .nav-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: #333;
+            font-weight: 500;
+            transition: color 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: #667eea;
+        }
+
+        /* Main Content */
+        .main-content {
+            padding: 120px 0 80px;
+            min-height: 100vh;
+        }
+
+        .content-card {
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.1);
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .page-title {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 2rem;
+            font-size: 2.5rem;
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 3rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 2rem;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+
+        .upload-area:hover {
+            border-color: #764ba2;
+            transform: scale(1.02);
+        }
+
+        .upload-area.dragover {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-color: white;
+        }
+
+        .upload-icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+
+        .upload-text {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+
+        .upload-hint {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* Preview */
+        .preview-container {
+            display: none;
+            margin: 2rem 0;
+            text-align: center;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Results */
+        .results {
+            display: none;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-top: 2rem;
+        }
+
+        .result-item {
+            background: white;
+            padding: 1.2rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+            animation: slideIn 0.5s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .result-class {
+            font-weight: bold;
+            color: #333;
+            font-size: 1.1rem;
+        }
+
+        .result-confidence {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        /* Buttons */
+        .button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 25px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+            width: 100%;
+            margin-top: 1rem;
+            font-weight: 500;
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 2rem 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Error */
+        .error {
+            background: #ff6b6b;
+            color: white;
+            padding: 1rem;
+            border-radius: 10px;
+            margin: 1rem 0;
+            display: none;
+            text-align: center;
+        }
+
+        /* Model Status */
+        .model-status {
+            text-align: center;
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 10px;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+        }
+
+        .status-error {
+            background: rgba(255, 107, 107, 0.1);
+            color: #ff6b6b;
+        }
+
+        @media (max-width: 768px) {
+            .nav-links {
+                display: none;
+            }
+            
+            .content-card {
+                padding: 2rem 1.5rem;
+            }
+            
+            .upload-area {
+                padding: 2rem 1rem;
+            }
+            
+            .page-title {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav>
+        <div class="container nav-container">
+            <div class="logo">
+                <i class="fas fa-apple-alt"></i>
+                FreshCheck
+            </div>
+            <ul class="nav-links">
+                <li><a href="/"><i class="fas fa-home"></i> Beranda</a></li>
+                <li><a href="/classification" class="active"><i class="fas fa-camera"></i> Klasifikasi</a></li>
+                <li><a href="/information"><i class="fas fa-info-circle"></i> Informasi</a></li>
+                <li><a href="/about"><i class="fas fa-users"></i> Tentang</a></li>
+            </ul>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <div class="container">
+            <div class="content-card">
+                <h1 class="page-title">Klasifikasi Kesegaran</h1>
+                
+                <!-- Model Status -->
+                <div class="model-status {% if not model_loaded %}status-error{% endif %}">
+                    <i class="fas fa-{% if model_loaded %}check-circle{% else %}exclamation-triangle{% endif %}"></i>
+                    {% if model_loaded %}
+                        Model AI siap digunakan. Unggah gambar untuk memulai analisis.
+                    {% else %}
+                        Model AI tidak tersedia. Beberapa fitur mungkin tidak berfungsi.
+                    {% endif %}
+                </div>
+
+                <div class="upload-area" id="uploadArea" {% if not model_loaded %}style="opacity: 0.6; pointer-events: none;"{% endif %}>
+                    <div class="upload-icon">📸</div>
+                    <div class="upload-text">Klik atau seret gambar ke sini</div>
+                    <div class="upload-hint">Format: JPG, PNG, GIF (Maks. 16MB)</div>
+                    <input type="file" id="fileInput" accept="image/*" {% if not model_loaded %}disabled{% endif %}>
+                </div>
+
+                <div class="error" id="errorMsg"></div>
+                
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 15px; color: #667eea; font-weight: bold;">Memproses gambar...</p>
+                </div>
+
+                <div class="preview-container" id="previewContainer">
+                    <img id="previewImage" class="preview-image" alt="Preview">
+                    <button class="button" id="analyzeBtn" {% if not model_loaded %}disabled{% endif %}>
+                        <i class="fas fa-search"></i> Analisis Kesegaran
+                    </button>
+                </div>
+
+                <div class="results" id="results">
+                    <h2 style="color: #667eea; margin-bottom: 1.5rem; text-align: center;">
+                        <i class="fas fa-chart-line"></i> Hasil Klasifikasi
+                    </h2>
+                    <div id="resultsList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const results = document.getElementById('results');
+        const resultsList = document.getElementById('resultsList');
+        const loading = document.getElementById('loading');
+        const errorMsg = document.getElementById('errorMsg');
+
+        let selectedFile = null;
+
+        uploadArea.addEventListener('click', () => {
+            {% if model_loaded %}
+                fileInput.click();
+            {% endif %}
+        });
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            {% if model_loaded %}
+                uploadArea.classList.add('dragover');
+            {% endif %}
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            {% if model_loaded %}
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            {% endif %}
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            if (!file.type.match('image.*')) {
+                showError('Mohon pilih file gambar yang valid');
+                return;
+            }
+
+            selectedFile = file;
+            const reader = new FileReader();
+            
+            reader.onload = (e) => {
+                previewImage.src = e.target.result;
+                previewContainer.style.display = 'block';
+                results.style.display = 'none';
+                errorMsg.style.display = 'none';
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        analyzeBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            loading.style.display = 'block';
+            analyzeBtn.disabled = true;
+            results.style.display = 'none';
+            errorMsg.style.display = 'none';
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    displayResults(data);
+                    previewImage.src = data.image_url;
+                } else {
+                    showError(data.error || 'Terjadi kesalahan saat menganalisis gambar');
+                }
+            } catch (error) {
+                showError('Gagal menghubungi server');
+            } finally {
+                loading.style.display = 'none';
+                analyzeBtn.disabled = false;
+            }
+        });
+
+        function displayResults(data) {
+            resultsList.innerHTML = '';
+            
+            if (data.predictions.length === 0) {
+                resultsList.innerHTML = '<p style="text-align: center; color: #666; padding: 2rem;">Tidak ada objek yang terdeteksi dalam gambar</p>';
+            } else {
+                data.predictions.forEach((pred, index) => {
+                    const resultItem = document.createElement('div');
+                    resultItem.className = 'result-item';
+                    resultItem.style.animationDelay = `${index * 0.1}s`;
+                    resultItem.innerHTML = `
+                        <span class="result-class">${pred.class}</span>
+                        <span class="result-confidence">${pred.confidence}%</span>
+                    `;
+                    resultsList.appendChild(resultItem);
+                });
+            }
+            
+            results.style.display = 'block';
+            results.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showError(message) {
+            errorMsg.textContent = message;
+            errorMsg.style.display = 'block';
+        }
+    </script>
+</body>
+</html>
