@@ -1,8 +1,20 @@
-Flask==3.0.3
-gunicorn==22.0.0
-pandas==2.2.2
-numpy==1.26.4
-scikit-learn==1.4.2
-joblib==1.4.2
-matplotlib==3.8.4
-seaborn==0.13.2
+# Core Web Framework
+Flask==2.3.3
+Werkzeug==2.3.7
+Jinja2==3.1.2
+
+# Production Server
+gunicorn==20.1.0
+
+# Machine Learning
+torch==2.0.1
+torchvision==0.15.2
+ultralytics==8.0.196
+numpy==1.24.3
+opencv-python-headless==4.8.0.74
+Pillow==10.0.0
+
+# Additional
+pyyaml==6.0
+requests==2.31.0
+tqdm==4.65.0
