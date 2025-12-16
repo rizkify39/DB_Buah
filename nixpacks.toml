@@ -1,7 +1,11 @@
-# nixpacks.toml
+# nixpacks.toml - Optimized for Railway Free Plan (Low RAM)
 
 [phases.setup]
+# Python 3.10 paling stabil buat Torch 2.0
 nixPkgs = ["python310", "gcc"]
+
+# LIBRARY WAJIB: Biar OpenCV ga error "libGL.so.1"
+# libglib2.0-0 juga ditambahin buat jaga-jaga error GThread
 aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
@@ -10,24 +14,32 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # Install Torch CPU
+  # STEP 1: Install PyTorch CPU Only DULUAN.
+  # Ini krusial biar pip ga download versi GPU yang ukurannya 2GB+.
+  # Kita pakai --no-cache-dir biar RAM build server ga penuh.
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # Install requirements
+  # STEP 2: Install requirements sisanya.
   "pip install --no-cache-dir -r requirements.txt",
   
-  # Cleanup library NVIDIA berat
-  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
+  # STEP 3: CLEANUP EXTREME (Wajib buat Free Plan)
+  # Ultralytics suka diem-diem install nvidia-*, kita tendang keluar biar image kecil & hemat RAM.
+  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 ultralytics-thop 2>/dev/null || true",
   
-  # HAPUS BARIS 'pip cache purge' DI SINI KARENA BIKIN ERROR
-  
-  # Cleanup file compiled python (.pyc) saja
+  # STEP 4: Hapus file sampah python (.pyc)
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
 [start]
+# KONFIGURASI PENTING:
+# workers 1  : Wajib. Jangan diubah jadi 2/3/4. RAM lu cuma 500MB. Kalau 2 worker = 2x Model YOLO = Crash.
+# threads 2  : Biar masih bisa handle request masuk pas lagi mikir (concurrency ringan).
+# timeout 120: Inference YOLO pertama kali itu lama (cold start), kasih waktu napas biar ga error 504.
 cmd = "gunicorn --workers 1 --threads 2 --timeout 120 app:app"
 
 [variables]
+# Matikan GUI total biar hemat memori
 OPENCV_DISABLE_GUI = "1"
+# Mencegah matplotlib (kalau kepake ultralytics) bikin window
+MPLBACKEND = "Agg" 
 QT_QPA_PLATFORM = "offscreen"
