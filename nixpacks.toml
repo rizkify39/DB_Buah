@@ -1,9 +1,11 @@
-# Force Rebuild: v2 (Ganti angka ini kalau masih error biar cache jebol)
+# nixpacks.toml
 
 [phases.setup]
 nixPkgs = ["python310", "gcc", "ffmpeg"]
-# INI KUNCINYA. Railway butuh library ini buat jalanin OpenCV
-aptPkgs = ["libgl1", "libglib2.0-0"]
+# KITA SUAPIN LIBRARY-NYA LANGSUNG:
+# libgl1-mesa-glx: Ini obat paling ampuh buat error "libGL.so.1"
+# libglib2.0-0: Buat jaga-jaga error GUI lainnya
+aptPkgs = ["libgl1-mesa-glx", "libglib2.0-0"]
 
 [phases.install]
 cmds = [
@@ -11,20 +13,16 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # 1. Install PyTorch CPU (Hemat 700MB RAM)
+  # Install Torch CPU (Wajib buat hemat RAM Free Plan)
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # 2. Install Requirements
+  # Install sisanya
   "pip install --no-cache-dir -r requirements.txt",
   
-  # 3. HAPUS OpenCV biasa (Jaga-jaga kalau kebawa sama Ultralytics)
-  "pip uninstall -y opencv-python || true",
-  
-  # 4. Pastikan Headless terinstall
-  "pip install --no-cache-dir opencv-python-headless==4.8.0.74",
-
-  # 5. Bersihkan sampah NVIDIA & Cache biar enteng
+  # Kita tetep coba uninstall driver NVIDIA biar gak berat-beratin image
   "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
+  
+  # Cleanup
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
