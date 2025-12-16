@@ -45,7 +45,6 @@ def get_model():
             
             if os.path.exists('best.pt'):
                 _model = YOLO('best.pt')
-                # Fuse model untuk performa lebih cepat (opsional, bisa di-skip jika error)
                 try:
                     _model.fuse()
                 except:
@@ -65,7 +64,8 @@ def allowed_file(filename):
 
 def process_image(image_path):
     """
-    PERBAIKAN: Menangani konversi PIL ke OpenCV dengan Robust (Anti-Error).
+    PERBAIKAN V2: MENGHINDARI cv2.cvtColor SEPENUHNYA.
+    Menggunakan Numpy Slicing untuk konversi warna.
     """
     model = get_model()
     if model is None:
@@ -79,52 +79,48 @@ def process_image(image_path):
     try:
         # 1. Buka gambar dengan PIL
         pil_img = Image.open(image_path)
-        pil_img.load() # Paksa load data gambar ke memori
+        pil_img.load() 
         
         # 2. Pastikan format RGB
         if pil_img.mode != 'RGB':
             pil_img = pil_img.convert('RGB')
         
-        # 3. Resize dengan PIL (LANCZOS)
+        # 3. Resize
         width, height = pil_img.size
         if max(width, height) > MAX_IMAGE_SIZE:
             scale = MAX_IMAGE_SIZE / max(width, height)
             new_size = (int(width * scale), int(height * scale))
             pil_img = pil_img.resize(new_size, Image.Resampling.LANCZOS)
         
-        # 4. [FIX UTAMA] Konversi ke Numpy Array yang AMAN untuk OpenCV
-        # dtype=np.uint8: Memastikan tipe data benar (angka 0-255)
+        # 4. Konversi ke Numpy Array (Memaksa uint8)
         img_array = np.array(pil_img, dtype=np.uint8)
 
-        # 5. [FIX TAMBAHAN] Pastikan array contiguous di memori
-        # OpenCV kadang error jika array dari PIL tidak 'contiguous'
-        img_array = np.ascontiguousarray(img_array)
+        # DEBUG LOG: Cek bentuk array di terminal/logs
+        print(f"DEBUG IMAGE: Shape={img_array.shape}, Dtype={img_array.dtype}")
 
-        # 6. Cek validitas Array sebelum masuk OpenCV
-        if img_array is None or img_array.size == 0:
-            raise ValueError("Gambar kosong atau gagal dikonversi ke Array")
-
-        # 7. Konversi RGB (PIL) ke BGR (OpenCV)
-        # Sekarang pasti aman karena img_array sudah divalidasi
-        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        # 5. [FIX FINAL] Bypass cv2.cvtColor yang error.
+        # Kita gunakan Numpy Slicing untuk membalik urutan channel (RGB -> BGR)
+        # ::-1 artinya: Ambil semua baris, semua kolom, tapi balik urutan channel warnanya.
+        img_array = img_array[:, :, ::-1].copy()
         
-        # 8. PREDIKSI
+        # 6. PREDIKSI
         results = model(img_array, imgsz=MAX_IMAGE_SIZE, verbose=False)
         result = results[0]
         
-        # 9. Visualisasi
+        # 7. Visualisasi (Hasilnya BGR)
         annotated_image_bgr = result.plot()
         
-        # 10. Konversi balik BGR ke RGB untuk Web
-        annotated_image_rgb = cv2.cvtColor(annotated_image_bgr, cv2.COLOR_BGR2RGB)
+        # 8. [FIX FINAL] Konversi balik BGR -> RGB untuk Web (Pakai Slicing lagi)
+        # Menghindari cv2.cvtColor(..., COLOR_BGR2RGB)
+        annotated_image_rgb = annotated_image_bgr[:, :, ::-1].copy()
         
-        # 11. Simpan ke Buffer
+        # 9. Simpan ke Buffer
         pil_result = Image.fromarray(annotated_image_rgb)
         buffered = io.BytesIO()
         pil_result.save(buffered, format="JPEG", quality=JPEG_QUALITY, optimize=True)
         img_str = base64.b64encode(buffered.getvalue()).decode()
         
-        # 12. Ekstrak Data
+        # 10. Ekstrak Data
         predictions = []
         if result.boxes is not None:
             for box in result.boxes:
@@ -147,7 +143,6 @@ def process_image(image_path):
         return None, f"Error memproses gambar: {str(e)}"
     
     finally:
-        # Cleanup Memory Manual
         if 'pil_img' in locals(): del pil_img
         if 'img_array' in locals(): del img_array
         if 'annotated_image_bgr' in locals(): del annotated_image_bgr
