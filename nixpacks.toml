@@ -1,12 +1,7 @@
 # nixpacks.toml
 
 [phases.setup]
-# Menggunakan Python 3.10
 nixPkgs = ["python310", "gcc"]
-
-# INI KUNCINYA: Install driver GL asli dari repo Linux (Debian)
-# libgl1 mengatasi error "libGL.so.1"
-# libglib2.0-0 mengatasi error "libgthread" yang sering muncul setelah libGL fix
 aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
@@ -15,25 +10,24 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # Strategi kamu untuk install Torch CPU sudah BAGUS (hemat RAM), kita pertahankan:
+  # Install Torch CPU
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # Install sisanya
+  # Install requirements
   "pip install --no-cache-dir -r requirements.txt",
   
-  # Uninstall paksa library NVIDIA berat yang mungkin terbawa oleh ultralytics (cleanup)
+  # Cleanup library NVIDIA berat
   "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
   
-  # Bersihkan cache agar image ringan
-  "pip cache purge",
+  # HAPUS BARIS 'pip cache purge' DI SINI KARENA BIKIN ERROR
+  
+  # Cleanup file compiled python (.pyc) saja
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
 [start]
-# Command start standar, tanpa perlu export path aneh-aneh
 cmd = "gunicorn --workers 1 --threads 2 --timeout 120 app:app"
 
 [variables]
-# Mencegah error Qt/GUI
 OPENCV_DISABLE_GUI = "1"
 QT_QPA_PLATFORM = "offscreen"
