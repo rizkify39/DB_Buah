@@ -1,8 +1,8 @@
-# nixpacks.toml
+# Force Rebuild: v2 (Ganti angka ini kalau masih error biar cache jebol)
 
 [phases.setup]
 nixPkgs = ["python310", "gcc", "ffmpeg"]
-# Kita tetap request library ini sebagai jaring pengaman
+# INI KUNCINYA. Railway butuh library ini buat jalanin OpenCV
 aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
@@ -11,23 +11,20 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # 1. Install Torch CPU (Hemat RAM)
+  # 1. Install PyTorch CPU (Hemat 700MB RAM)
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # 2. Install Requirements (termasuk Ultralytics)
+  # 2. Install Requirements
   "pip install --no-cache-dir -r requirements.txt",
   
-  # 3. [CRITICAL FIX] Hapus OpenCV biasa yang dibawa oleh Ultralytics
-  # Kita paksa uninstall 'opencv-python' biar yang tersisa cuma 'opencv-python-headless'
+  # 3. HAPUS OpenCV biasa (Jaga-jaga kalau kebawa sama Ultralytics)
   "pip uninstall -y opencv-python || true",
   
-  # 4. Pastikan Headless terinstall (Re-install force untuk memastikan)
+  # 4. Pastikan Headless terinstall
   "pip install --no-cache-dir opencv-python-headless==4.8.0.74",
 
-  # 5. Cleanup sampah NVIDIA
+  # 5. Bersihkan sampah NVIDIA & Cache biar enteng
   "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
-  
-  # 6. Bersihkan file cache python
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
