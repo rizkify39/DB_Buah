@@ -1,46 +1,46 @@
 import os
-# Set environment variables untuk mencegah OpenCV menggunakan GUI
+import gc
+import io
+import cv2
+import base64
+import numpy as np
+import torch
+from flask import Flask, render_template, request, jsonify
+from werkzeug.utils import secure_filename
+from PIL import Image
+from ultralytics import YOLO
+
+# --- KONFIGURASI ENVIRONMENT ---
+# Set environment variables untuk mencegah OpenCV/Matplotlib menggunakan GUI
 os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['DISPLAY'] = ''
+os.environ['MPLBACKEND'] = 'Agg'
 
-# Workaround untuk libGL.so.1 - set LD_LIBRARY_PATH sebelum import cv2
-libgl_paths = ['/app/libgl_dummy', '/tmp/libgl_dummy']
+# Workaround untuk libGL.so.1 - Cek path standar Linux Railway
+libgl_paths = ['/app/libgl_dummy', '/tmp/libgl_dummy', '/usr/lib/x86_64-linux-gnu', '/usr/lib']
 for lib_path in libgl_paths:
     if os.path.exists(os.path.join(lib_path, 'libGL.so.1')):
         current_ld = os.environ.get('LD_LIBRARY_PATH', '')
         os.environ['LD_LIBRARY_PATH'] = lib_path + ':' + current_ld
         break
 
-import cv2
-import numpy as np
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, session
-from werkzeug.utils import secure_filename
-import base64
-from PIL import Image
-import io
-import json
-from datetime import datetime
-import traceback
-import gc
-
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'freshness_classifier_secret_key_2024')
 
-# Konfigurasi upload - dikurangi untuk menghemat memori
+# --- KONFIGURASI UPLOAD & MEMORI ---
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # Dikurangi dari 16MB ke 8MB
+app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # Limit 8MB
 
-# Konfigurasi optimasi memori
-MAX_IMAGE_SIZE = 1024  # Maksimal ukuran gambar untuk processing (1024x1024)
-JPEG_QUALITY = 75  # Kualitas JPEG untuk output (dikurangi dari 85)
+# Optimasi processing
+MAX_IMAGE_SIZE = 1024
+JPEG_QUALITY = 70
 
-# Buat folder jika belum ada
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Load model YOLO dengan lazy loading
+# --- MODEL HANDLING ---
 _model = None
 _model_lock = False
 
@@ -51,21 +51,16 @@ def get_model():
     if _model is None and not _model_lock:
         _model_lock = True
         try:
-            import torch
-            # Pastikan menggunakan CPU mode untuk menghemat memori
+            # Pastikan menggunakan CPU mode
             if torch.cuda.is_available():
-                print("⚠️  GPU terdeteksi, tetapi menggunakan CPU untuk konsistensi")
-            torch.set_num_threads(2)  # Batasi thread untuk menghemat memori
+                print("⚠️  GPU terdeteksi, tetapi memaksa CPU untuk stabilitas")
+            torch.set_num_threads(2)
             
-            from ultralytics import YOLO
             if os.path.exists('best.pt'):
-                # Load model dengan optimasi memori
                 _model = YOLO('best.pt')
-                # Set model ke mode inference untuk menghemat memori
-                _model.fuse()
-                # Pastikan model menggunakan CPU
-                _model.to('cpu')
-                print("✅ Model berhasil dimuat!")
+                _model.fuse() # Optimasi memori
+                _model.to('cpu') # Wajib CPU
+                print("✅ Model berhasil dimuat di CPU!")
             else:
                 print("❌ File model 'best.pt' tidak ditemukan")
         except Exception as e:
@@ -78,78 +73,51 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def resize_image_if_needed(image, max_size=MAX_IMAGE_SIZE):
-    """Resize gambar jika terlalu besar untuk menghemat memori"""
-    height, width = image.shape[:2]
-    if max(height, width) > max_size:
-        # Hitung skala
-        scale = max_size / max(height, width)
-        new_width = int(width * scale)
-        new_height = int(height * scale)
-        # Resize dengan INTER_AREA untuk kualitas lebih baik
-        image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
-    return image
-
 def process_image(image_path):
-    """Memproses gambar dan melakukan prediksi dengan optimasi memori"""
+    """
+    PERBAIKAN: Memproses gambar langsung dari PIL ke YOLO tanpa konversi Numpy manual.
+    Ini memperbaiki error 'Cannot convert numpy.ndarray' dan menghemat memori.
+    """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
     
-    image = None
+    pil_img = None
+    annotated_image_bgr = None
+    
     try:
-        # Baca gambar dengan PIL untuk kontrol memori yang lebih baik
+        # 1. Buka gambar dengan PIL
         pil_img = Image.open(image_path)
-        # Konversi ke RGB jika perlu
+        
+        # 2. Pastikan format RGB
         if pil_img.mode != 'RGB':
             pil_img = pil_img.convert('RGB')
         
-        # Resize jika terlalu besar sebelum konversi ke numpy
+        # 3. Resize dengan PIL (Lebih ringan di RAM)
         width, height = pil_img.size
         if max(width, height) > MAX_IMAGE_SIZE:
             scale = MAX_IMAGE_SIZE / max(width, height)
             new_size = (int(width * scale), int(height * scale))
             pil_img = pil_img.resize(new_size, Image.Resampling.LANCZOS)
         
-        # Konversi ke numpy array
-        image = np.array(pil_img)
-        # Konversi RGB ke BGR untuk OpenCV
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        
-        # Hapus referensi PIL image untuk menghemat memori
-        del pil_img
-        gc.collect()
-        
-        if image is None or image.size == 0:
-            return None, "Gagal membaca gambar"
-        
-        # Lakukan prediksi dengan YOLO (dengan imgsz untuk konsistensi)
-        results = model(image, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        # 4. PREDIKSI (INFERENCE) - Direct PIL Input
+        # Kita hapus konversi manual ke numpy/cv2 disini untuk fix error.
+        results = model(pil_img, imgsz=MAX_IMAGE_SIZE, verbose=False)
         result = results[0]
         
-        # Render hasil deteksi
-        annotated_image = result.plot()
-        annotated_image_rgb = cv2.cvtColor(annotated_image, cv2.COLOR_BGR2RGB)
+        # 5. Visualisasi (Output plot() adalah numpy array BGR)
+        annotated_image_bgr = result.plot()
         
-        # Hapus image asli dari memori
-        del image
-        del annotated_image
-        gc.collect()
+        # 6. Konversi BGR ke RGB untuk output web
+        annotated_image_rgb = cv2.cvtColor(annotated_image_bgr, cv2.COLOR_BGR2RGB)
         
-        # Konversi ke base64 dengan kualitas lebih rendah untuk menghemat memori
-        pil_image = Image.fromarray(annotated_image_rgb)
+        # 7. Simpan ke Buffer (Base64)
+        pil_result = Image.fromarray(annotated_image_rgb)
         buffered = io.BytesIO()
-        # Optimize=True untuk kompresi lebih baik
-        pil_image.save(buffered, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+        pil_result.save(buffered, format="JPEG", quality=JPEG_QUALITY, optimize=True)
         img_str = base64.b64encode(buffered.getvalue()).decode()
         
-        # Hapus dari memori
-        del pil_image
-        del annotated_image_rgb
-        del buffered
-        gc.collect()
-        
-        # Ekstrak informasi deteksi
+        # 8. Ekstrak Data
         predictions = []
         if result.boxes is not None:
             for box in result.boxes:
@@ -163,22 +131,23 @@ def process_image(image_path):
                     'bbox': box.xyxy[0].tolist()
                 })
         
-        # Hapus results dari memori
-        del results
-        del result
-        gc.collect()
-        
         return img_str, predictions
     
     except Exception as e:
+        print(f"Processing Error: {str(e)}")
         return None, f"Error memproses gambar: {str(e)}"
+    
     finally:
-        # Pastikan cleanup
-        if image is not None:
-            del image
+        # 9. MANUAL CLEANUP (Penting buat Railway Free Plan)
+        if 'pil_img' in locals(): del pil_img
+        if 'annotated_image_bgr' in locals(): del annotated_image_bgr
+        if 'annotated_image_rgb' in locals(): del annotated_image_rgb
+        if 'results' in locals(): del results
+        if 'result' in locals(): del result
+        if 'pil_result' in locals(): del pil_result
         gc.collect()
 
-# Data informasi buah dan sayuran dengan icon
+# --- DATA INFORMASI (PERSIS SEPERTI PERMINTAAN) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -410,6 +379,8 @@ FRESHNESS_ORDER = [
     'Fresh Bitter Gourd', 'Stale Bitter Gourd'
 ]
 
+# --- ROUTES ---
+
 @app.route('/')
 def index():
     model = get_model()
@@ -434,7 +405,7 @@ def about():
 def predict():
     model = get_model()
     if model is None:
-        return jsonify({'success': False, 'error': 'Model tidak tersedia'})
+        return jsonify({'success': False, 'error': 'Model tidak tersedia (Cek Log)'})
     
     if 'file' not in request.files:
         return jsonify({'success': False, 'error': 'Tidak ada file yang dipilih'})
@@ -451,38 +422,41 @@ def predict():
         try:
             file.save(filepath)
             
-            # Proses gambar
-            processed_image, predictions = process_image(filepath)
+            # Proses gambar dengan fungsi yang sudah diperbaiki
+            result_data = process_image(filepath)
             
-            # Hapus file setelah diproses untuk menghemat disk space
-            try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-            except:
-                pass
-            
-            if processed_image:
-                return jsonify({
-                    'success': True,
-                    'image_url': f"data:image/jpeg;base64,{processed_image}",
-                    'predictions': predictions
-                })
+            # Unpack result aman
+            if result_data and len(result_data) == 2:
+                processed_image, predictions = result_data
+                
+                if processed_image:
+                    return jsonify({
+                        'success': True,
+                        'image_url': f"data:image/jpeg;base64,{processed_image}",
+                        'predictions': predictions
+                    })
+                else:
+                    # Jika processed_image None, berarti ada error di predictions
+                    return jsonify({
+                        'success': False,
+                        'error': predictions
+                    })
             else:
-                return jsonify({
-                    'success': False,
-                    'error': predictions  # predictions berisi pesan error
-                })
+                return jsonify({'success': False, 'error': 'Gagal memproses output prediksi'})
+
         except Exception as e:
-            # Cleanup jika error
-            try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-            except:
-                pass
             return jsonify({
                 'success': False,
                 'error': f'Error memproses file: {str(e)}'
             })
+        finally:
+            # Cleanup file setelah upload
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+            except:
+                pass
+            gc.collect()
     
     return jsonify({
         'success': False,
