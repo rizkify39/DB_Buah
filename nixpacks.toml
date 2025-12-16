@@ -2,7 +2,7 @@
 
 [phases.setup]
 nixPkgs = ["python310", "gcc", "ffmpeg"]
-# UPDATE DISINI: Ganti 'libgl1-mesa-glx' jadi 'libgl1' karena lu pake Ubuntu 24.04
+# INI KUNCINYA: Untuk Ubuntu 24.04 (Noble), paketnya bernama 'libgl1' (bukan mesa-glx)
 aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
@@ -11,22 +11,22 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # Install Torch CPU (Wajib)
+  # 1. Install Torch CPU (Wajib hemat RAM)
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # Install sisanya
+  # 2. Install sisanya (Termasuk Ultralytics)
   "pip install --no-cache-dir -r requirements.txt",
   
-  # Hapus OpenCV biasa kalau kebawa (Jaga-jaga)
+  # 3. [LANGKAH PEMBUNUH] Paksa Uninstall OpenCV biasa yang dibawa Ultralytics
   "pip uninstall -y opencv-python || true",
   
-  # Pastikan Headless ada
+  # 4. [LANGKAH PENYELAMAT] Paksa Install ulang Headless yang bener
   "pip install --no-cache-dir opencv-python-headless==4.8.0.74",
 
-  # Cleanup sampah NVIDIA
+  # 5. Buang sampah NVIDIA
   "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
   
-  # Cleanup cache
+  # 6. Cleanup
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
