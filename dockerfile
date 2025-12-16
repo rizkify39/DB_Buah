@@ -1,5 +1,4 @@
 # Gunakan base image Python yang sangat ringan (Debian Slim)
-# Ini jauh lebih stabil daripada Nixpacks buat urusan library Linux
 FROM python:3.10-slim
 
 # Set environment variables
@@ -10,39 +9,40 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MPLBACKEND=Agg \
     LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib:/lib
 
-# Set work directory
 WORKDIR /app
 
-# 1. INSTALL SYSTEM DEPENDENCIES (FIX LIBGL)
-# Kita install libgl1 langsung di level OS Debian. Dijamin works.
+# 1. INSTALL SYSTEM LIBRARY (Wajib buat OpenCV)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
+# 2. COPY Requirements
 COPY requirements.txt .
 
-# 2. INSTALL PYTHON PACKAGES (HEMAT MEMORI)
-# Gabung dalam satu layer biar image size kecil
-RUN pip install --no-cache-dir --upgrade pip && \
-    # Install Torch CPU Only (Wajib)
-    pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu && \
-    # Install sisa requirements
-    pip install --no-cache-dir -r requirements.txt && \
-    # Hapus OpenCV biasa (jika kebawa) dan paksa Headless
-    pip uninstall -y opencv-python || true && \
-    pip install --no-cache-dir opencv-python-headless==4.8.0.74 && \
-    # Buang sampah NVIDIA yang bikin berat
-    pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop || true && \
-    # Bersihkan cache
-    rm -rf /root/.cache/pip
+# 3. INSTALL PYTHON PACKAGES (Bertahap biar aman)
+RUN pip install --no-cache-dir --upgrade pip
 
-# Copy aplikasi
+# Install Torch CPU dulu
+RUN pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu
+
+# Install Ultralytics TANPA dependencies dulu (biar ga narik sampah)
+RUN pip install --no-cache-dir --no-deps ultralytics==8.0.196
+
+# Install requirements sisanya (Flask, Pillow, dll)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# [FIX UTAMA] Paksa Install OpenCV Headless secara eksplisit di layer terpisah
+# Ini memastikan modul 'cv2' benar-benar ada
+RUN pip uninstall -y opencv-python || true
+RUN pip install --no-cache-dir --force-reinstall opencv-python-headless==4.8.0.74
+
+# Install dependency pendukung Ultralytics yang penting-penting aja
+RUN pip install --no-cache-dir matplotlib>=3.3.0 scipy>=1.4.1 tqdm>=4.64.0 pyyaml>=5.3.1 psutil py-cpuinfo thop pandas seaborn
+
+# Copy aplikasi terakhir (biar kalau ganti code doang, ga perlu install ulang library)
 COPY . .
 
-# Expose port (Railway butuh ini)
 EXPOSE 8080
 
-# Command start
 CMD ["gunicorn", "--workers", "1", "--threads", "2", "--timeout", "120", "--bind", "0.0.0.0:8080", "app:app"]
