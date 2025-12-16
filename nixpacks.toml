@@ -1,44 +1,39 @@
+# nixpacks.toml
+
 [phases.setup]
-nixPkgs = ["python310", "gcc", "mesa"]
+# Menggunakan Python 3.10
+nixPkgs = ["python310", "gcc"]
+
+# INI KUNCINYA: Install driver GL asli dari repo Linux (Debian)
+# libgl1 mengatasi error "libGL.so.1"
+# libglib2.0-0 mengatasi error "libgthread" yang sering muncul setelah libGL fix
+aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
 cmds = [
-  # Buat dummy libGL library di fase install
-  "mkdir -p /app/libgl_dummy",
-  "echo '#include <dlfcn.h>' > /app/libgl_dummy/libgl.c",
-  "echo 'void glBegin(unsigned int mode) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glEnd(void) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glVertex3f(float x, float y, float z) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glClear(unsigned int mask) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glColor3f(float r, float g, float b) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glLoadIdentity(void) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glMatrixMode(unsigned int mode) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glOrtho(double left, double right, double bottom, double top, double near, double far) {}' >> /app/libgl_dummy/libgl.c",
-  "echo 'void glViewport(int x, int y, int width, int height) {}' >> /app/libgl_dummy/libgl.c",
-  "gcc -shared -fPIC -o /app/libgl_dummy/libGL.so.1 /app/libgl_dummy/libgl.c || (echo 'Failed to create dummy libGL, creating empty file' && touch /app/libgl_dummy/libGL.so.1)",
-  "ls -la /app/libgl_dummy/ || true",
   "python -m venv --copies /opt/venv",
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
-  # Install PyTorch CPU-only PERTAMA - versi yang lebih ringan (~200MB vs ~900MB GPU)
+  
+  # Strategi kamu untuk install Torch CPU sudah BAGUS (hemat RAM), kita pertahankan:
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
-  # Install base requirements (termasuk dependencies ultralytics)
-  "pip install --no-cache-dir -r requirements-base.txt",
-  # Install ultralytics - pip akan menggunakan torch yang sudah terinstall jika memenuhi requirement
-  "pip install --no-cache-dir ultralytics==8.0.196",
-  # Verifikasi dan uninstall torch GPU jika terinstall (fallback)
-  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-cupti-cu12 nvidia-nvtx-cu12 nvidia-nvjitlink-cu12 nvidia-nvshmem-cu12 nvidia-nccl-cu12 nvidia-cufile-cu12 nvidia-cusparselt-cu12 triton 2>/dev/null || true",
-  # Cleanup untuk mengurangi ukuran image
-  "pip cache purge 2>/dev/null || true",
-  "find /opt/venv -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true",
-  "find /opt/venv -type f -name '*.pyc' -delete 2>/dev/null || true",
-  "find /opt/venv -type f -name '*.pyo' -delete 2>/dev/null || true"
+  
+  # Install sisanya
+  "pip install --no-cache-dir -r requirements.txt",
+  
+  # Uninstall paksa library NVIDIA berat yang mungkin terbawa oleh ultralytics (cleanup)
+  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
+  
+  # Bersihkan cache agar image ringan
+  "pip cache purge",
+  "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
 [start]
-cmd = "export LD_LIBRARY_PATH=/app/libgl_dummy:$LD_LIBRARY_PATH && export LD_PRELOAD=/app/libgl_dummy/libGL.so.1:$LD_PRELOAD && gunicorn --workers 1 --threads 2 --timeout 120 app:app"
+# Command start standar, tanpa perlu export path aneh-aneh
+cmd = "gunicorn --workers 1 --threads 2 --timeout 120 app:app"
 
 [variables]
+# Mencegah error Qt/GUI
 OPENCV_DISABLE_GUI = "1"
 QT_QPA_PLATFORM = "offscreen"
-
