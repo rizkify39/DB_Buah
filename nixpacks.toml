@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python310", "gcc"]
+nixPkgs = ["python310", "gcc", "libGL"]
 
 [phases.install]
 cmds = [
@@ -23,4 +23,8 @@ cmds = [
 
 [start]
 cmd = "gunicorn --workers 1 --threads 2 --timeout 120 app:app"
+
+[variables]
+OPENCV_DISABLE_GUI = "1"
+QT_QPA_PLATFORM = "offscreen"
 

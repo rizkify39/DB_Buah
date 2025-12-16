@@ -1,4 +1,9 @@
 import os
+# Set environment variables untuk mencegah OpenCV menggunakan GUI
+os.environ['OPENCV_DISABLE_GUI'] = '1'
+os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+os.environ['DISPLAY'] = ''
+
 import cv2
 import numpy as np
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, session
