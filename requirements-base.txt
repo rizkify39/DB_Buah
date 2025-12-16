@@ -8,7 +8,7 @@ gunicorn==20.1.0
 
 # Machine Learning - tanpa torch/torchvision (diinstall terpisah sebagai CPU-only)
 numpy==1.24.3
-opencv-python-headless>=4.8.0
+opencv-python-headless==4.9.0.80
 Pillow==10.0.0
 
 # Additional
