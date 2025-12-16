@@ -2,7 +2,7 @@
 
 [phases.setup]
 nixPkgs = ["python310", "gcc", "ffmpeg"]
-# Kita install library-nya
+# INI KUNCINYA: Untuk Ubuntu 24.04 (Noble), paketnya bernama 'libgl1' (bukan mesa-glx)
 aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
@@ -11,18 +11,22 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # Install Torch CPU
+  # 1. Install Torch CPU (Wajib hemat RAM)
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # Install requirements
+  # 2. Install sisanya (Termasuk Ultralytics)
   "pip install --no-cache-dir -r requirements.txt",
   
-  # HAPUS OpenCV biasa & PAKSA Reinstall Headless
+  # 3. [LANGKAH PEMBUNUH] Paksa Uninstall OpenCV biasa yang dibawa Ultralytics
   "pip uninstall -y opencv-python || true",
-  "pip install --no-cache-dir --force-reinstall opencv-python-headless==4.8.0.74",
+  
+  # 4. [LANGKAH PENYELAMAT] Paksa Install ulang Headless yang bener
+  "pip install --no-cache-dir opencv-python-headless==4.8.0.74",
 
-  # Cleanup
+  # 5. Buang sampah NVIDIA
   "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
+  
+  # 6. Cleanup
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
@@ -32,5 +36,5 @@ cmd = "gunicorn --workers 1 --threads 2 --timeout 120 app:app"
 [variables]
 OPENCV_DISABLE_GUI = "1"
 QT_QPA_PLATFORM = "offscreen"
-# INI KUNCINYA. Kita kasih tau Linux: "CARI LIBRARY DISINI, JANGAN NANYA LAGI!"
+# Tambahan: Pastikan Linux tau dimana librarynya
 LD_LIBRARY_PATH = "/usr/lib/x86_64-linux-gnu:/usr/lib:/lib"
