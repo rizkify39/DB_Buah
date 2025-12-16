@@ -11,7 +11,6 @@ from PIL import Image
 from ultralytics import YOLO
 
 # --- KONFIGURASI ENVIRONMENT ---
-# Environment variable untuk headless mode
 os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['DISPLAY'] = ''
@@ -26,7 +25,6 @@ ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # Limit 8MB
 
-# Optimasi processing
 MAX_IMAGE_SIZE = 1024
 JPEG_QUALITY = 70
 
@@ -37,21 +35,18 @@ _model = None
 _model_lock = False
 
 def get_model():
-    """Lazy load model hanya ketika diperlukan"""
     global _model, _model_lock
-    
     if _model is None and not _model_lock:
         _model_lock = True
         try:
-            # Pastikan menggunakan CPU mode
             if torch.cuda.is_available():
-                print("⚠️  GPU terdeteksi, tetapi memaksa CPU untuk stabilitas")
+                print("⚠️  GPU terdeteksi, tetapi memaksa CPU")
             torch.set_num_threads(2)
             
             if os.path.exists('best.pt'):
                 _model = YOLO('best.pt')
-                _model.fuse() # Optimasi memori
-                _model.to('cpu') # Wajib CPU
+                _model.fuse()
+                _model.to('cpu')
                 print("✅ Model berhasil dimuat di CPU!")
             else:
                 print("❌ File model 'best.pt' tidak ditemukan")
@@ -59,7 +54,6 @@ def get_model():
             print(f"❌ Error loading model: {e}")
         finally:
             _model_lock = False
-    
     return _model
 
 def allowed_file(filename):
@@ -67,51 +61,58 @@ def allowed_file(filename):
 
 def process_image(image_path):
     """
-    PERBAIKAN: Memproses gambar langsung dari PIL ke YOLO tanpa konversi Numpy manual.
-    Ini memperbaiki error 'Cannot convert numpy.ndarray' dan menghemat memori.
+    PERBAIKAN FINAL: Konversi Eksplisit PIL -> Numpy Array.
+    Ini memperbaiki error 'src is not a numpy array' di OpenCV.
     """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
     
     pil_img = None
+    img_array = None
     annotated_image_bgr = None
-    annotated_image_rgb = None
-    pil_result = None
     
     try:
-        # 1. Buka gambar dengan PIL
+        # 1. Buka gambar dengan PIL (Aman & Ringan)
         pil_img = Image.open(image_path)
         
         # 2. Pastikan format RGB
         if pil_img.mode != 'RGB':
             pil_img = pil_img.convert('RGB')
         
-        # 3. Resize dengan PIL (Lebih ringan di RAM)
+        # 3. Resize dengan PIL
         width, height = pil_img.size
         if max(width, height) > MAX_IMAGE_SIZE:
             scale = MAX_IMAGE_SIZE / max(width, height)
             new_size = (int(width * scale), int(height * scale))
             pil_img = pil_img.resize(new_size, Image.Resampling.LANCZOS)
         
-        # 4. PREDIKSI (INFERENCE) - Direct PIL Input
-        # Kita hapus konversi manual ke numpy/cv2 disini untuk fix error.
-        results = model(pil_img, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        # 4. [FIX UTAMA] Konversi ke Numpy Array SEBELUM masuk model/opencv
+        # OpenCV dan YOLO butuh input berupa Array angka, bukan Object Gambar
+        img_array = np.array(pil_img)
+        
+        # 5. Konversi RGB (PIL) ke BGR (OpenCV)
+        # Penting: OpenCV bacanya BGR, PIL bacanya RGB. Kita samakan persepsi.
+        img_array = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+        
+        # 6. PREDIKSI
+        # Input sekarang sudah pasti Numpy Array BGR yang valid
+        results = model(img_array, imgsz=MAX_IMAGE_SIZE, verbose=False)
         result = results[0]
         
-        # 5. Visualisasi (Output plot() adalah numpy array BGR)
+        # 7. Visualisasi
         annotated_image_bgr = result.plot()
         
-        # 6. Konversi BGR ke RGB untuk output web
+        # 8. Konversi balik BGR ke RGB untuk ditampilkan di Web
         annotated_image_rgb = cv2.cvtColor(annotated_image_bgr, cv2.COLOR_BGR2RGB)
         
-        # 7. Simpan ke Buffer (Base64)
+        # 9. Simpan ke Buffer
         pil_result = Image.fromarray(annotated_image_rgb)
         buffered = io.BytesIO()
         pil_result.save(buffered, format="JPEG", quality=JPEG_QUALITY, optimize=True)
         img_str = base64.b64encode(buffered.getvalue()).decode()
         
-        # 8. Ekstrak Data
+        # 10. Ekstrak Data
         predictions = []
         if result.boxes is not None:
             for box in result.boxes:
@@ -129,251 +130,120 @@ def process_image(image_path):
     
     except Exception as e:
         print(f"Processing Error: {str(e)}")
+        # Print error lengkap ke log server biar jelas
+        import traceback
+        traceback.print_exc()
         return None, f"Error memproses gambar: {str(e)}"
     
     finally:
-        # 9. MANUAL CLEANUP (Penting buat Railway Free Plan)
+        # Cleanup Memory
         if 'pil_img' in locals(): del pil_img
+        if 'img_array' in locals(): del img_array
         if 'annotated_image_bgr' in locals(): del annotated_image_bgr
-        if 'annotated_image_rgb' in locals(): del annotated_image_rgb
         if 'results' in locals(): del results
         if 'result' in locals(): del result
-        if 'pil_result' in locals(): del pil_result
         gc.collect()
 
-# --- DATA INFORMASI (YANG UDAH BENER - TANPA PARE) ---
+# --- DATA INFORMASI ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
         'icon': '🍎',
         'description': 'Apel dalam kondisi segar dengan kulit mengkilap dan tekstur keras',
-        'characteristics': [
-            'Kulit berwarna cerah dan mengkilap',
-            'Tekstur keras saat ditekan',
-            'Aroma segar dan manis',
-            'Tangkai masih menempel kuat',
-            'Tidak ada bercak atau memar'
-        ],
-        'storage_tips': [
-            'Simpan di kulkas pada suhu 0-4°C',
-            'Jauhkan dari buah lain yang menghasilkan etilen',
-            'Dapat bertahan 4-6 minggu dalam kulkas'
-        ],
-        'benefits': [
-            'Kaya serat dan vitamin C',
-            'Baik untuk pencernaan',
-            'Membantu menjaga kesehatan jantung'
-        ]
+        'characteristics': ['Kulit berwarna cerah dan mengkilap', 'Tekstur keras saat ditekan', 'Aroma segar dan manis', 'Tangkai masih menempel kuat', 'Tidak ada bercak atau memar'],
+        'storage_tips': ['Simpan di kulkas pada suhu 0-4°C', 'Jauhkan dari buah lain yang menghasilkan etilen', 'Dapat bertahan 4-6 minggu dalam kulkas'],
+        'benefits': ['Kaya serat dan vitamin C', 'Baik untuk pencernaan', 'Membantu menjaga kesehatan jantung']
     },
     'Stale Apple': {
         'name': 'Apel Tidak Segar',
         'icon': '🍎',
         'description': 'Apel yang sudah mulai membusuk atau tidak segar',
-        'characteristics': [
-            'Kulit keriput dan kusam',
-            'Tekstur lembek saat ditekan',
-            'Ada bercak coklat atau hitam',
-            'Aroma asam atau fermentasi',
-            'Tangkai mudah lepas'
-        ],
+        'characteristics': ['Kulit keriput dan kusam', 'Tekstur lembek saat ditekan', 'Ada bercak coklat atau hitam', 'Aroma asam atau fermentasi', 'Tangkai mudah lepas'],
         'warning': 'Tidak disarankan untuk dikonsumsi',
-        'disposal_tips': [
-            'Dapat dijadikan kompos',
-            'Jangan dikonsumsi jika sudah berjamur'
-        ]
+        'disposal_tips': ['Dapat dijadikan kompos', 'Jangan dikonsumsi jika sudah berjamur']
     },
     'Fresh Banana': {
         'name': 'Pisang Segar',
         'icon': '🍌',
         'description': 'Pisang matang dengan kulit kuning dan bintik coklat sedikit',
-        'characteristics': [
-            'Kulit kuning dengan sedikit bintik coklat',
-            'Tekstur padat tapi tidak keras',
-            'Aroma manis khas pisang',
-            'Bentuk melengkung sempurna',
-            'Tidak ada memar besar'
-        ],
-        'storage_tips': [
-            'Simpan di suhu ruang',
-            'Jauhkan dari sinar matahari langsung',
-            'Jika terlalu matang, simpan di kulkas'
-        ],
-        'benefits': [
-            'Sumber potassium yang baik',
-            'Kaya vitamin B6',
-            'Membantu mengatur tekanan darah'
-        ]
+        'characteristics': ['Kulit kuning dengan sedikit bintik coklat', 'Tekstur padat tapi tidak keras', 'Aroma manis khas pisang', 'Bentuk melengkung sempurna', 'Tidak ada memar besar'],
+        'storage_tips': ['Simpan di suhu ruang', 'Jauhkan dari sinar matahari langsung', 'Jika terlalu matang, simpan di kulkas'],
+        'benefits': ['Sumber potassium yang baik', 'Kaya vitamin B6', 'Membantu mengatur tekanan darah']
     },
     'Stale Banana': {
         'name': 'Pisang Tidak Segar',
         'icon': '🍌',
         'description': 'Pisang yang sudah terlalu matang atau mulai membusuk',
-        'characteristics': [
-            'Kulit hampir seluruhnya coklat atau hitam',
-            'Tekstur sangat lembek',
-            'Aroma fermentasi kuat',
-            'Kulit mudah pecah',
-            'Daging buah berair berlebihan'
-        ],
+        'characteristics': ['Kulit hampir seluruhnya coklat atau hitam', 'Tekstur sangat lembek', 'Aroma fermentasi kuat', 'Kulit mudah pecah', 'Daging buah berair berlebihan'],
         'warning': 'Masih bisa digunakan untuk smoothie atau baking jika belum berjamur',
-        'usage_tips': [
-            'Cocok untuk membuat banana bread',
-            'Dapat dibekukan untuk smoothie',
-            'Baik untuk masker wajah alami'
-        ]
+        'usage_tips': ['Cocok untuk membuat banana bread', 'Dapat dibekukan untuk smoothie', 'Baik untuk masker wajah alami']
     },
     'Fresh Orange': {
         'name': 'Jeruk Segar',
         'icon': '🍊',
         'description': 'Jeruk segar dengan kulit halus dan berat sesuai ukuran',
-        'characteristics': [
-            'Kulit halus dan berpori halus',
-            'Berat sesuai dengan ukurannya',
-            'Warna orange cerah dan merata',
-            'Aroma segar khas jeruk',
-            'Kulit tidak terlalu keras atau terlalu lunak'
-        ],
-        'storage_tips': [
-            'Simpan di suhu ruang yang sejuk',
-            'Dapat bertahan 1-2 minggu',
-            'Simpan di kulkas untuk penyimpanan lebih lama'
-        ],
-        'benefits': [
-            'Sumber vitamin C tinggi',
-            'Meningkatkan imunitas',
-            'Baik untuk kesehatan kulit'
-        ]
+        'characteristics': ['Kulit halus dan berpori halus', 'Berat sesuai dengan ukurannya', 'Warna orange cerah dan merata', 'Aroma segar khas jeruk', 'Kulit tidak terlalu keras atau terlalu lunak'],
+        'storage_tips': ['Simpan di suhu ruang yang sejuk', 'Dapat bertahan 1-2 minggu', 'Simpan di kulkas untuk penyimpanan lebih lama'],
+        'benefits': ['Sumber vitamin C tinggi', 'Meningkatkan imunitas', 'Baik untuk kesehatan kulit']
     },
     'Stale Orange': {
         'name': 'Jeruk Tidak Segar',
         'icon': '🍊',
         'description': 'Jeruk yang sudah mulai mengering atau membusuk',
-        'characteristics': [
-            'Kulit kering dan keriput',
-            'Terasa ringan untuk ukurannya',
-            'Warna kusam atau ada bercak',
-            'Aroma asam tidak sedap',
-            'Kulit mudah dikupas secara tidak normal'
-        ],
+        'characteristics': ['Kulit kering dan keriput', 'Terasa ringan untuk ukurannya', 'Warna kusam atau ada bercak', 'Aroma asam tidak sedap', 'Kulit mudah dikupas secara tidak normal'],
         'warning': 'Kualitas nutrisi sudah menurun'
     },
     'Fresh Tomato': {
         'name': 'Tomat Segar',
         'icon': '🍅',
         'description': 'Tomat segar dengan kulit halus dan warna merah merata',
-        'characteristics': [
-            'Kulit halus dan mengkilap',
-            'Warna merah merata',
-            'Tekstur padat tapi tidak keras',
-            'Tangkai hijau dan segar',
-            'Aroma segar khas tomat'
-        ],
-        'storage_tips': [
-            'Simpan di suhu ruang, jangan di kulkas',
-            'Jauhkan dari sinar matahari langsung',
-            'Jangan ditumpuk dengan buah lain'
-        ],
-        'benefits': [
-            'Kaya likopen antioksidan',
-            'Sumber vitamin A dan C',
-            'Baik untuk kesehatan mata'
-        ]
+        'characteristics': ['Kulit halus dan mengkilap', 'Warna merah merata', 'Tekstur padat tapi tidak keras', 'Tangkai hijau dan segar', 'Aroma segar khas tomat'],
+        'storage_tips': ['Simpan di suhu ruang, jangan di kulkas', 'Jauhkan dari sinar matahari langsung', 'Jangan ditumpuk dengan buah lain'],
+        'benefits': ['Kaya likopen antioksidan', 'Sumber vitamin A dan C', 'Baik untuk kesehatan mata']
     },
     'Stale Tomato': {
         'name': 'Tomat Tidak Segar',
         'icon': '🍅',
         'description': 'Tomat yang sudah lunak atau mulai membusuk',
-        'characteristics': [
-            'Kulit keriput atau lembek',
-            'Warna tidak merata atau ada bercak',
-            'Tekstur sangat lunak',
-            'Tangkai kering atau hitam',
-            'Aroma asam atau tidak sedap'
-        ],
+        'characteristics': ['Kulit keriput atau lembek', 'Warna tidak merata atau ada bercak', 'Tekstur sangat lunak', 'Tangkai kering atau hitam', 'Aroma asam atau tidak sedap'],
         'warning': 'Hindari konsumsi jika sudah berjamur'
     },
     'Fresh Capsicum': {
         'name': 'Paprika Segar',
         'icon': '🫑',
         'description': 'Paprika segar dengan kulit mengkilap dan tekstur renyah',
-        'characteristics': [
-            'Kulit mengkilap dan halus',
-            'Warna cerah dan merata',
-            'Tekstur keras dan renyah',
-            'Tangkai hijau dan segar',
-            'Bentuk proporsional dan padat'
-        ],
-        'storage_tips': [
-            'Simpan di kulkas dalam plastik berlubang',
-            'Dapat bertahan 1-2 minggu',
-            'Jangan dicuci sebelum disimpan'
-        ],
-        'benefits': [
-            'Sumber vitamin C tinggi',
-            'Kaya antioksidan',
-            'Rendah kalori'
-        ]
+        'characteristics': ['Kulit mengkilap dan halus', 'Warna cerah dan merata', 'Tekstur keras dan renyah', 'Tangkai hijau dan segar', 'Bentuk proporsional dan padat'],
+        'storage_tips': ['Simpan di kulkas dalam plastik berlubang', 'Dapat bertahan 1-2 minggu', 'Jangan dicuci sebelum disimpan'],
+        'benefits': ['Sumber vitamin C tinggi', 'Kaya antioksidan', 'Rendah kalori']
     },
     'Stale Capsicum': {
         'name': 'Paprika Tidak Segar',
         'icon': '🫑',
         'description': 'Paprika yang sudah mulai layu atau membusuk',
-        'characteristics': [
-            'Kulit kusam dan keriput',
-            'Tekstur lunak dan tidak renyah',
-            'Warna memudar atau ada bercak',
-            'Tangkai kering atau hitam',
-            'Aroma tidak segar'
-        ]
+        'characteristics': ['Kulit kusam dan keriput', 'Tekstur lunak dan tidak renyah', 'Warna memudar atau ada bercak', 'Tangkai kering atau hitam', 'Aroma tidak segar']
     },
     'Fresh Bitter Gourd': {
         'name': 'Pare Segar',
         'icon': '🥒',
         'description': 'Pare segar dengan kulit hijau cerah dan tekstur padat',
-        'characteristics': [
-            'Kulit hijau cerah dan montok',
-            'Tekstur padat dan berair',
-            'Duri halus masih terlihat jelas',
-            'Bentuk lurus atau melengkung natural',
-            'Aroma khas pare segar'
-        ],
-        'storage_tips': [
-            'Simpan di kulkas dalam wadah tertutup',
-            'Dapat bertahan 4-5 hari',
-            'Bungkus dengan plastik berlubang'
-        ],
-        'benefits': [
-            'Baik untuk penderita diabetes',
-            'Membantu menurunkan gula darah',
-            'Kaya antioksidan'
-        ]
+        'characteristics': ['Kulit hijau cerah dan montok', 'Tekstur padat dan berair', 'Duri halus masih terlihat jelas', 'Bentuk lurus atau melengkung natural', 'Aroma khas pare segar'],
+        'storage_tips': ['Simpan di kulkas dalam wadah tertutup', 'Dapat bertahan 4-5 hari', 'Bungkus dengan plastik berlubang'],
+        'benefits': ['Baik untuk penderita diabetes', 'Membantu menurunkan gula darah', 'Kaya antioksidan']
     },
     'Stale Bitter Gourd': {
         'name': 'Pare Tidak Segar',
         'icon': '🥒',
         'description': 'Pare yang sudah mulai menguning atau membusuk',
-        'characteristics': [
-            'Kulit menguning atau ada bercak',
-            'Tekstur lunak dan keriput',
-            'Warna tidak merata',
-            'Aroma tidak sedap',
-            'Duri halus sudah tidak jelas'
-        ],
+        'characteristics': ['Kulit menguning atau ada bercak', 'Tekstur lunak dan keriput', 'Warna tidak merata', 'Aroma tidak sedap', 'Duri halus sudah tidak jelas'],
         'warning': 'Rasa akan lebih pahit dan tekstur tidak enak'
     }
 }
 
-# Urutan tampilan dari segar ke tidak segar
 FRESHNESS_ORDER = [
-    'Fresh Apple', 'Stale Apple',
-    'Fresh Banana', 'Stale Banana', 
-    'Fresh Orange', 'Stale Orange',
-    'Fresh Tomato', 'Stale Tomato',
-    'Fresh Capsicum', 'Stale Capsicum',
-    'Fresh Bitter Gourd', 'Stale Bitter Gourd'
+    'Fresh Apple', 'Stale Apple', 'Fresh Banana', 'Stale Banana', 
+    'Fresh Orange', 'Stale Orange', 'Fresh Tomato', 'Stale Tomato',
+    'Fresh Capsicum', 'Stale Capsicum', 'Fresh Bitter Gourd', 'Stale Bitter Gourd'
 ]
-
-# --- ROUTES ---
 
 @app.route('/')
 def index():
@@ -387,7 +257,6 @@ def classification():
 
 @app.route('/information')
 def information():
-    # Urutkan informasi berdasarkan FRESHNESS_ORDER
     ordered_info = {key: FRESHNESS_INFO[key] for key in FRESHNESS_ORDER}
     return render_template('information.html', freshness_info=ordered_info)
 
@@ -399,61 +268,41 @@ def about():
 def predict():
     model = get_model()
     if model is None:
-        return jsonify({'success': False, 'error': 'Model tidak tersedia (Cek Log)'})
+        return jsonify({'success': False, 'error': 'Model tidak tersedia'})
     
     if 'file' not in request.files:
-        return jsonify({'success': False, 'error': 'Tidak ada file yang dipilih'})
+        return jsonify({'success': False, 'error': 'Tidak ada file'})
     
     file = request.files['file']
-    
     if file.filename == '':
-        return jsonify({'success': False, 'error': 'Tidak ada file yang dipilih'})
+        return jsonify({'success': False, 'error': 'Tidak ada file'})
     
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        
         try:
             file.save(filepath)
+            processed_image, predictions = process_image(filepath)
             
-            # Proses gambar dengan fungsi yang sudah diperbaiki
-            result_data = process_image(filepath)
-            
-            # Unpack result aman
-            if result_data and len(result_data) == 2:
-                processed_image, predictions = result_data
-                
-                if processed_image:
-                    return jsonify({
-                        'success': True,
-                        'image_url': f"data:image/jpeg;base64,{processed_image}",
-                        'predictions': predictions
-                    })
-                else:
-                    return jsonify({
-                        'success': False,
-                        'error': predictions
-                    })
-            else:
-                return jsonify({'success': False, 'error': 'Gagal memproses output prediksi'})
-
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'error': f'Error memproses file: {str(e)}'
-            })
-        finally:
+            # Hapus file setelah proses
             try:
                 if os.path.exists(filepath):
                     os.remove(filepath)
             except:
                 pass
-            gc.collect()
+
+            if processed_image:
+                return jsonify({
+                    'success': True,
+                    'image_url': f"data:image/jpeg;base64,{processed_image}",
+                    'predictions': predictions
+                })
+            else:
+                return jsonify({'success': False, 'error': predictions})
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)})
     
-    return jsonify({
-        'success': False,
-        'error': 'Format file tidak didukung'
-    })
+    return jsonify({'success': False, 'error': 'Format file invalid'})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
