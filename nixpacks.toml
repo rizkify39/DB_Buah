@@ -1,11 +1,8 @@
-# nixpacks.toml - Optimized for Railway Free Plan (Low RAM)
+# nixpacks.toml
 
 [phases.setup]
-# Python 3.10 paling stabil buat Torch 2.0
-nixPkgs = ["python310", "gcc"]
-
-# LIBRARY WAJIB: Biar OpenCV ga error "libGL.so.1"
-# libglib2.0-0 juga ditambahin buat jaga-jaga error GThread
+nixPkgs = ["python310", "gcc", "ffmpeg"]
+# Kita tetap request library ini sebagai jaring pengaman
 aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
@@ -14,32 +11,29 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # STEP 1: Install PyTorch CPU Only DULUAN.
-  # Ini krusial biar pip ga download versi GPU yang ukurannya 2GB+.
-  # Kita pakai --no-cache-dir biar RAM build server ga penuh.
+  # 1. Install Torch CPU (Hemat RAM)
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
-  # STEP 2: Install requirements sisanya.
+  # 2. Install Requirements (termasuk Ultralytics)
   "pip install --no-cache-dir -r requirements.txt",
   
-  # STEP 3: CLEANUP EXTREME (Wajib buat Free Plan)
-  # Ultralytics suka diem-diem install nvidia-*, kita tendang keluar biar image kecil & hemat RAM.
-  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-cupti-cu12 ultralytics-thop 2>/dev/null || true",
+  # 3. [CRITICAL FIX] Hapus OpenCV biasa yang dibawa oleh Ultralytics
+  # Kita paksa uninstall 'opencv-python' biar yang tersisa cuma 'opencv-python-headless'
+  "pip uninstall -y opencv-python || true",
   
-  # STEP 4: Hapus file sampah python (.pyc)
+  # 4. Pastikan Headless terinstall (Re-install force untuk memastikan)
+  "pip install --no-cache-dir opencv-python-headless==4.8.0.74",
+
+  # 5. Cleanup sampah NVIDIA
+  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
+  
+  # 6. Bersihkan file cache python
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
 [start]
-# KONFIGURASI PENTING:
-# workers 1  : Wajib. Jangan diubah jadi 2/3/4. RAM lu cuma 500MB. Kalau 2 worker = 2x Model YOLO = Crash.
-# threads 2  : Biar masih bisa handle request masuk pas lagi mikir (concurrency ringan).
-# timeout 120: Inference YOLO pertama kali itu lama (cold start), kasih waktu napas biar ga error 504.
 cmd = "gunicorn --workers 1 --threads 2 --timeout 120 app:app"
 
 [variables]
-# Matikan GUI total biar hemat memori
 OPENCV_DISABLE_GUI = "1"
-# Mencegah matplotlib (kalau kepake ultralytics) bikin window
-MPLBACKEND = "Agg" 
 QT_QPA_PLATFORM = "offscreen"
