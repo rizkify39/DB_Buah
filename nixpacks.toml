@@ -3,9 +3,10 @@ nixPkgs = ["python310", "gcc", "mesa"]
 
 [phases.install]
 cmds = [
-  # Workaround untuk libGL.so.1 - buat dummy library minimal
-  "mkdir -p /tmp/libgl_dummy && echo 'void glBegin(){} void glEnd(){} void glVertex3f(){}' > /tmp/libgl_dummy/libgl.c && gcc -shared -fPIC -o /tmp/libgl_dummy/libGL.so.1 /tmp/libgl_dummy/libgl.c 2>/dev/null || true",
-  "export LD_LIBRARY_PATH=/tmp/libgl_dummy:$LD_LIBRARY_PATH || true",
+  # Buat dummy libGL library di fase install
+  "mkdir -p /app/libgl_dummy",
+  "cat > /app/libgl_dummy/libgl.c << 'EOF'\n#include <dlfcn.h>\nvoid glBegin(unsigned int mode) {}\nvoid glEnd(void) {}\nvoid glVertex3f(float x, float y, float z) {}\nvoid glClear(unsigned int mask) {}\nvoid glColor3f(float r, float g, float b) {}\nvoid glLoadIdentity(void) {}\nvoid glMatrixMode(unsigned int mode) {}\nvoid glOrtho(double left, double right, double bottom, double top, double near, double far) {}\nvoid glViewport(int x, int y, int width, int height) {}\nEOF",
+  "gcc -shared -fPIC -o /app/libgl_dummy/libGL.so.1 /app/libgl_dummy/libgl.c 2>/dev/null || echo 'Warning: Failed to create dummy libGL'",
   "python -m venv --copies /opt/venv",
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
