@@ -7,8 +7,10 @@ Jinja2==3.1.2
 gunicorn==20.1.0
 
 # Machine Learning
-torch==2.0.1
-torchvision==0.15.2
+# Catatan: torch dan torchvision diinstall secara terpisah di railway.json sebagai CPU-only
+# untuk menghemat ~500MB memori. Versi CPU-only lebih ringan untuk Railway free plan.
+# torch==2.0.1  # Diinstall via buildCommand di railway.json
+# torchvision==0.15.2  # Diinstall via buildCommand di railway.json
 ultralytics==8.0.196
 numpy==1.24.3
 opencv-python-headless==4.8.0.74
