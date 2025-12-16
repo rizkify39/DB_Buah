@@ -5,14 +5,20 @@ nixPkgs = ["python310", "gcc"]
 cmds = [
   "python -m venv --copies /opt/venv",
   ". /opt/venv/bin/activate",
-  "pip install --no-cache-dir --upgrade pip",
-  # Install semua requirements (ultralytics akan install torch GPU)
-  "pip install --no-cache-dir -r requirements.txt",
-  # Uninstall torch GPU dan semua CUDA dependencies
-  "pip uninstall -y torch torchvision || true",
-  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-cupti-cu12 nvidia-nvtx-cu12 nvidia-nvjitlink-cu12 nvidia-nvshmem-cu12 nvidia-nccl-cu12 nvidia-cufile-cu12 nvidia-cusparselt-cu12 triton || true",
-  # Install PyTorch CPU-only
-  "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu"
+  "pip install --no-cache-dir --upgrade pip setuptools wheel",
+  # Install PyTorch CPU-only PERTAMA - versi yang lebih ringan (~200MB vs ~900MB GPU)
+  "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
+  # Install base requirements (termasuk dependencies ultralytics)
+  "pip install --no-cache-dir -r requirements-base.txt",
+  # Install ultralytics - pip akan menggunakan torch yang sudah terinstall jika memenuhi requirement
+  "pip install --no-cache-dir ultralytics==8.0.196",
+  # Verifikasi dan uninstall torch GPU jika terinstall (fallback)
+  "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cusparse-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cuda-runtime-cu12 nvidia-cuda-nvrtc-cu12 nvidia-cuda-cupti-cu12 nvidia-nvtx-cu12 nvidia-nvjitlink-cu12 nvidia-nvshmem-cu12 nvidia-nccl-cu12 nvidia-cufile-cu12 nvidia-cusparselt-cu12 triton 2>/dev/null || true",
+  # Cleanup untuk mengurangi ukuran image
+  "pip cache purge 2>/dev/null || true",
+  "find /opt/venv -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true",
+  "find /opt/venv -type f -name '*.pyc' -delete 2>/dev/null || true",
+  "find /opt/venv -type f -name '*.pyo' -delete 2>/dev/null || true"
 ]
 
 [start]
