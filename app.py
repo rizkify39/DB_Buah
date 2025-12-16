@@ -11,19 +11,11 @@ from PIL import Image
 from ultralytics import YOLO
 
 # --- KONFIGURASI ENVIRONMENT ---
-# Set environment variables untuk mencegah OpenCV/Matplotlib menggunakan GUI
+# Environment variable untuk headless mode
 os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['DISPLAY'] = ''
 os.environ['MPLBACKEND'] = 'Agg'
-
-# Workaround untuk libGL.so.1 - Cek path standar Linux Railway
-libgl_paths = ['/app/libgl_dummy', '/tmp/libgl_dummy', '/usr/lib/x86_64-linux-gnu', '/usr/lib']
-for lib_path in libgl_paths:
-    if os.path.exists(os.path.join(lib_path, 'libGL.so.1')):
-        current_ld = os.environ.get('LD_LIBRARY_PATH', '')
-        os.environ['LD_LIBRARY_PATH'] = lib_path + ':' + current_ld
-        break
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'freshness_classifier_secret_key_2024')
@@ -84,6 +76,8 @@ def process_image(image_path):
     
     pil_img = None
     annotated_image_bgr = None
+    annotated_image_rgb = None
+    pil_result = None
     
     try:
         # 1. Buka gambar dengan PIL
@@ -147,7 +141,7 @@ def process_image(image_path):
         if 'pil_result' in locals(): del pil_result
         gc.collect()
 
-# --- DATA INFORMASI (PERSIS SEPERTI PERMINTAAN) ---
+# --- DATA INFORMASI (YANG UDAH BENER - TANPA PARE) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -436,7 +430,6 @@ def predict():
                         'predictions': predictions
                     })
                 else:
-                    # Jika processed_image None, berarti ada error di predictions
                     return jsonify({
                         'success': False,
                         'error': predictions
@@ -450,7 +443,6 @@ def predict():
                 'error': f'Error memproses file: {str(e)}'
             })
         finally:
-            # Cleanup file setelah upload
             try:
                 if os.path.exists(filepath):
                     os.remove(filepath)
