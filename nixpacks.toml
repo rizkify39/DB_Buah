@@ -5,8 +5,18 @@ nixPkgs = ["python310", "gcc", "mesa"]
 cmds = [
   # Buat dummy libGL library di fase install
   "mkdir -p /app/libgl_dummy",
-  "cat > /app/libgl_dummy/libgl.c << 'EOF'\n#include <dlfcn.h>\nvoid glBegin(unsigned int mode) {}\nvoid glEnd(void) {}\nvoid glVertex3f(float x, float y, float z) {}\nvoid glClear(unsigned int mask) {}\nvoid glColor3f(float r, float g, float b) {}\nvoid glLoadIdentity(void) {}\nvoid glMatrixMode(unsigned int mode) {}\nvoid glOrtho(double left, double right, double bottom, double top, double near, double far) {}\nvoid glViewport(int x, int y, int width, int height) {}\nEOF",
-  "gcc -shared -fPIC -o /app/libgl_dummy/libGL.so.1 /app/libgl_dummy/libgl.c 2>/dev/null || echo 'Warning: Failed to create dummy libGL'",
+  "echo '#include <dlfcn.h>' > /app/libgl_dummy/libgl.c",
+  "echo 'void glBegin(unsigned int mode) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glEnd(void) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glVertex3f(float x, float y, float z) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glClear(unsigned int mask) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glColor3f(float r, float g, float b) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glLoadIdentity(void) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glMatrixMode(unsigned int mode) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glOrtho(double left, double right, double bottom, double top, double near, double far) {}' >> /app/libgl_dummy/libgl.c",
+  "echo 'void glViewport(int x, int y, int width, int height) {}' >> /app/libgl_dummy/libgl.c",
+  "gcc -shared -fPIC -o /app/libgl_dummy/libGL.so.1 /app/libgl_dummy/libgl.c || (echo 'Failed to create dummy libGL, creating empty file' && touch /app/libgl_dummy/libGL.so.1)",
+  "ls -la /app/libgl_dummy/ || true",
   "python -m venv --copies /opt/venv",
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
@@ -26,7 +36,7 @@ cmds = [
 ]
 
 [start]
-cmd = "chmod +x start.sh && ./start.sh"
+cmd = "export LD_LIBRARY_PATH=/app/libgl_dummy:$LD_LIBRARY_PATH && export LD_PRELOAD=/app/libgl_dummy/libGL.so.1:$LD_PRELOAD && gunicorn --workers 1 --threads 2 --timeout 120 app:app"
 
 [variables]
 OPENCV_DISABLE_GUI = "1"

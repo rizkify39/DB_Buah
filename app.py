@@ -4,6 +4,14 @@ os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['DISPLAY'] = ''
 
+# Workaround untuk libGL.so.1 - set LD_LIBRARY_PATH sebelum import cv2
+libgl_paths = ['/app/libgl_dummy', '/tmp/libgl_dummy']
+for lib_path in libgl_paths:
+    if os.path.exists(os.path.join(lib_path, 'libGL.so.1')):
+        current_ld = os.environ.get('LD_LIBRARY_PATH', '')
+        os.environ['LD_LIBRARY_PATH'] = lib_path + ':' + current_ld
+        break
+
 import cv2
 import numpy as np
 from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, session
