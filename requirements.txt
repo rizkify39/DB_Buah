@@ -1,8 +1,7 @@
 Flask==2.3.3
 gunicorn==20.1.0
 numpy==1.24.3
-# Wajib headless biar ga nyari library GUI
-opencv-python-headless==4.8.0.74
 Pillow==10.0.0
-# Ultralytics akan tetap jalan pakai torch CPU yang sudah kita install di nixpacks
+# PENTING: Jangan ada 'opencv-python' biasa. Wajib headless.
+opencv-python-headless==4.8.0.74
 ultralytics==8.0.196
