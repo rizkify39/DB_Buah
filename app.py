@@ -63,92 +63,98 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def process_image(image_path):
-    """
-    PERBAIKAN V2: MENGHINDARI cv2.cvtColor SEPENUHNYA.
-    Menggunakan Numpy Slicing untuk konversi warna.
-    """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
-    
-    pil_img = None
-    img_array = None
-    annotated_image_bgr = None
-    results = None
-    
+
     try:
-        # 1. Buka gambar dengan PIL
-        pil_img = Image.open(image_path)
-        pil_img.load() 
-        
-        # 2. Pastikan format RGB
-        if pil_img.mode != 'RGB':
-            pil_img = pil_img.convert('RGB')
-        
-        # 3. Resize
-        width, height = pil_img.size
-        if max(width, height) > MAX_IMAGE_SIZE:
-            scale = MAX_IMAGE_SIZE / max(width, height)
-            new_size = (int(width * scale), int(height * scale))
-            pil_img = pil_img.resize(new_size, Image.Resampling.LANCZOS)
-        
-        # 4. Konversi ke Numpy Array (Memaksa uint8)
-        img_array = np.array(pil_img, dtype=np.uint8)
+        # 1. Load image (PIL)
+        pil_img = Image.open(image_path).convert("RGB")
 
-        # DEBUG LOG: Cek bentuk array di terminal/logs
-        print(f"DEBUG IMAGE: Shape={img_array.shape}, Dtype={img_array.dtype}")
+        # 2. Resize pakai PIL (aman)
+        w, h = pil_img.size
+        if max(w, h) > MAX_IMAGE_SIZE:
+            scale = MAX_IMAGE_SIZE / max(w, h)
+            pil_img = pil_img.resize(
+                (int(w * scale), int(h * scale)),
+                Image.Resampling.LANCZOS
+            )
 
-        # 5. [FIX FINAL] Bypass cv2.cvtColor yang error.
-        # Kita gunakan Numpy Slicing untuk membalik urutan channel (RGB -> BGR)
-        # ::-1 artinya: Ambil semua baris, semua kolom, tapi balik urutan channel warnanya.
-        img_array = img_array[:, :, ::-1].copy()
-        
-        # 6. PREDIKSI
-        results = model(img_array, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        # 3. PIL -> numpy RGB
+        img_rgb = np.array(pil_img, dtype=np.uint8)
+
+        # 4. RGB -> BGR (tanpa cv2)
+        img_bgr = img_rgb[:, :, ::-1].copy()
+
+        # 5. YOLO inference
+        results = model(img_bgr, imgsz=MAX_IMAGE_SIZE, verbose=False)
         result = results[0]
-        
-        # 7. Visualisasi (Hasilnya BGR)
-        annotated_image_bgr = result.plot()
-        
-        # 8. [FIX FINAL] Konversi balik BGR -> RGB untuk Web (Pakai Slicing lagi)
-        # Menghindari cv2.cvtColor(..., COLOR_BGR2RGB)
-        annotated_image_rgb = annotated_image_bgr[:, :, ::-1].copy()
-        
-        # 9. Simpan ke Buffer
-        pil_result = Image.fromarray(annotated_image_rgb)
-        buffered = io.BytesIO()
-        pil_result.save(buffered, format="JPEG", quality=JPEG_QUALITY, optimize=True)
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-        
-        # 10. Ekstrak Data
+
+        # 6. Image untuk digambar
+        annotated_image_bgr = img_bgr.copy()
+
         predictions = []
+
         if result.boxes is not None:
             for box in result.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
                 class_id = int(box.cls[0])
-                class_name = model.names[class_id]
                 confidence = float(box.conf[0])
-                
+
+                class_name = model.names[class_id]
+                # contoh: "Fresh Apple", "Stale Banana" → TETAP
+                label = f"{class_name} {confidence:.2f}"
+
+                # Draw bounding box
+                cv2.rectangle(
+                    annotated_image_bgr,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 255, 0),
+                    2
+                )
+
+                # Draw label
+                cv2.putText(
+                    annotated_image_bgr,
+                    label,
+                    (x1, max(y1 - 10, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.6,
+                    (0, 255, 0),
+                    2
+                )
+
                 predictions.append({
-                    'class': class_name,
+                    'class': class_name,  # Fresh Apple, Stale Banana, dll
                     'confidence': round(confidence * 100, 2),
-                    'bbox': box.xyxy[0].tolist()
+                    'bbox': [x1, y1, x2, y2]
                 })
-        
+
+        # 7. BGR -> RGB (untuk web)
+        annotated_image_rgb = annotated_image_bgr[:, :, ::-1]
+
+        # 8. Encode ke base64
+        pil_result = Image.fromarray(annotated_image_rgb)
+        buffered = io.BytesIO()
+        pil_result.save(
+            buffered,
+            format="JPEG",
+            quality=JPEG_QUALITY,
+            optimize=True
+        )
+        img_str = base64.b64encode(buffered.getvalue()).decode()
+
         return img_str, predictions
-    
+
     except Exception as e:
-        print(f"Processing Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return None, f"Error memproses gambar: {str(e)}"
-    
+
     finally:
-        if 'pil_img' in locals(): del pil_img
-        if 'img_array' in locals(): del img_array
-        if 'annotated_image_bgr' in locals(): del annotated_image_bgr
-        if 'results' in locals(): del results
-        if 'result' in locals(): del result
         gc.collect()
+
 
 # --- DATA INFORMASI ---
 FRESHNESS_INFO = {
@@ -313,3 +319,4 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
