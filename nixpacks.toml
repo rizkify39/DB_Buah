@@ -2,10 +2,8 @@
 
 [phases.setup]
 nixPkgs = ["python310", "gcc", "ffmpeg"]
-# KITA SUAPIN LIBRARY-NYA LANGSUNG:
-# libgl1-mesa-glx: Ini obat paling ampuh buat error "libGL.so.1"
-# libglib2.0-0: Buat jaga-jaga error GUI lainnya
-aptPkgs = ["libgl1-mesa-glx", "libglib2.0-0"]
+# UPDATE DISINI: Ganti 'libgl1-mesa-glx' jadi 'libgl1' karena lu pake Ubuntu 24.04
+aptPkgs = ["libgl1", "libglib2.0-0"]
 
 [phases.install]
 cmds = [
@@ -13,16 +11,22 @@ cmds = [
   ". /opt/venv/bin/activate",
   "pip install --no-cache-dir --upgrade pip setuptools wheel",
   
-  # Install Torch CPU (Wajib buat hemat RAM Free Plan)
+  # Install Torch CPU (Wajib)
   "pip install --no-cache-dir torch==2.0.1+cpu torchvision==0.15.2+cpu --index-url https://download.pytorch.org/whl/cpu",
   
   # Install sisanya
   "pip install --no-cache-dir -r requirements.txt",
   
-  # Kita tetep coba uninstall driver NVIDIA biar gak berat-beratin image
+  # Hapus OpenCV biasa kalau kebawa (Jaga-jaga)
+  "pip uninstall -y opencv-python || true",
+  
+  # Pastikan Headless ada
+  "pip install --no-cache-dir opencv-python-headless==4.8.0.74",
+
+  # Cleanup sampah NVIDIA
   "pip uninstall -y nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cuda-runtime-cu12 ultralytics-thop 2>/dev/null || true",
   
-  # Cleanup
+  # Cleanup cache
   "find /opt/venv -type f -name '*.pyc' -delete"
 ]
 
