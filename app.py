@@ -61,60 +61,96 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def process_image(image_path):
-    """
-    PERBAIKAN FINAL (V3): 
-    Menyerahkan proses loading gambar sepenuhnya ke YOLO via File Path.
-    Ini bypass error 'Unsupported image type' pada Numpy Array.
-    """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
     
-    annotated_image_bgr = None
+    img_bgr = None
+    tensor_img = None
     results = None
     
     try:
-        # 1. PREDIKSI LANGSUNG DARI PATH
-        # Kita tidak load gambar manual pakai cv2/PIL. 
-        # Kita kasih alamat filenya, biar YOLO yang urus buka dan baca filenya.
-        # Ini support semua format standar (JPG, PNG, GIF, dll).
-        results = model(image_path, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        # 1. Load Manual dengan OpenCV
+        img_bgr = cv2.imread(image_path)
+        if img_bgr is None:
+            raise ValueError("Gagal membaca gambar dengan OpenCV")
+
+        # 2. Resize Manual agar sesuai stride model (kelipatan 32)
+        # Ini penting karena kita mem-bypass pre-processing otomatis YOLO
+        h, w = img_bgr.shape[:2]
+        r = min(MAX_IMAGE_SIZE / h, MAX_IMAGE_SIZE / w)
+        new_h, new_w = int(h * r), int(w * r)
+        # Pastikan dimensi kelipatan 32 (syarat YOLO)
+        new_h = (new_h // 32) * 32
+        new_w = (new_w // 32) * 32
+        # Hindari resize ke 0
+        new_h, new_w = max(32, new_h), max(32, new_w)
+        
+        img_resized = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+
+        # 3. [THE FIX] Konversi Manual ke Tensor
+        # Langkah: BGR -> RGB -> Normalize (0-1) -> Permute (HWC ke CHW) -> Batch (BCHW)
+        
+        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        
+        # Gunakan torch.tensor() bukan torch.from_numpy().
+        # torch.tensor() membuat COPY data, sehingga aman dari bug numpy 2.0
+        tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
+        
+        # Normalize 0-255 jadi 0.0-1.0
+        tensor_img /= 255.0
+        
+        # Ubah posisi channel: (Height, Width, Channel) -> (Channel, Height, Width)
+        tensor_img = tensor_img.permute(2, 0, 1)
+        
+        # Tambah dimensi Batch di depan: (CHW) -> (1, CHW)
+        tensor_img = tensor_img.unsqueeze(0)
+
+        # 4. Prediksi
+        # Kita suapkan Tensor, bukan path/numpy. YOLO akan menerimanya langsung.
+        results = model(tensor_img, verbose=False)
         result = results[0]
         
-        # 2. Visualisasi
-        # result.plot() mengembalikan Numpy Array format BGR (OpenCV format)
-        annotated_image_bgr = result.plot()
+        # 5. Visualisasi Manual
+        # Karena kita input Tensor, result.plot() kadang bermasalah render backgroundnya.
+        # Lebih aman kita gambar kotak manual di gambar OpenCV asli (img_resized).
+        annotated_img = img_resized.copy()
         
-        # 3. Resize Hasil (Opsional, agar ringan di web)
-        # Karena kita prediksi dari path, plot() mungkin mengembalikan resolusi asli yg besar.
-        # Kita kecilkan sebelum dikirim ke browser.
-        h, w = annotated_image_bgr.shape[:2]
-        if max(h, w) > MAX_IMAGE_SIZE:
-            scale = MAX_IMAGE_SIZE / max(h, w)
-            new_w = int(w * scale)
-            new_h = int(h * scale)
-            annotated_image_bgr = cv2.resize(annotated_image_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
+        if result.boxes is not None:
+            for box in result.boxes:
+                # Koordinat Box
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                
+                # Info Class
+                class_id = int(box.cls[0])
+                conf = float(box.conf[0])
+                label = f"{model.names[class_id]} {conf:.0%}"
+                
+                # Gambar Kotak
+                # Warna Hijau (BGR: 0, 255, 0)
+                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # Gambar Label (Background label agar terbaca)
+                (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w_text, y1), (0, 255, 0), -1)
+                cv2.putText(annotated_img, label, (x1, y1 - 5), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
-        # 4. Encode ke JPEG Base64
-        # Menggunakan cv2.imencode karena inputnya sudah pasti BGR dari result.plot()
-        success, buffer = cv2.imencode('.jpg', annotated_image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
-        
+        # 6. Encode Hasil ke JPEG Base64
+        success, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         if not success:
-            raise ValueError("Gagal encode gambar hasil ke JPEG")
+            raise ValueError("Gagal encode output image")
 
         img_str = base64.b64encode(buffer).decode('utf-8')
         
-        # 5. Ekstrak Data
+        # 7. Ekstrak Data Prediksi JSON
         predictions = []
         if result.boxes is not None:
             for box in result.boxes:
-                class_id = int(box.cls[0])
-                class_name = model.names[class_id]
-                confidence = float(box.conf[0])
-                
                 predictions.append({
-                    'class': class_name,
-                    'confidence': round(confidence * 100, 2),
+                    'class': model.names[int(box.cls[0])],
+                    'confidence': round(float(box.conf[0]) * 100, 2),
                     'bbox': box.xyxy[0].tolist()
                 })
         
@@ -127,13 +163,14 @@ def process_image(image_path):
         return None, f"Error memproses gambar: {str(e)}"
     
     finally:
-        # Cleanup
-        if 'annotated_image_bgr' in locals(): del annotated_image_bgr
+        # Cleanup Memory
+        if 'tensor_img' in locals(): del tensor_img
+        if 'img_bgr' in locals(): del img_bgr
+        if 'img_resized' in locals(): del img_resized
         if 'results' in locals(): del results
-        if 'result' in locals(): del result
         gc.collect()
 
-# --- DATA INFORMASI ---
+# --- DATA INFORMASI (Tetap Sama) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -272,7 +309,7 @@ def predict():
         try:
             file.save(filepath)
             
-            # --- MASUK KE PROSES INFERENCE (BY PASSING PATH) ---
+            # --- MASUK KE PROSES TENSOR MANUAL ---
             processed_image, predictions = process_image(filepath)
             
             # Hapus file setelah proses
