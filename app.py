@@ -75,67 +75,63 @@ def process_image(image_path):
         if img_bgr is None:
             raise ValueError("Gagal membaca gambar dengan OpenCV")
 
-        # 2. Resize Manual agar sesuai stride model (kelipatan 32)
-        # Ini penting karena kita mem-bypass pre-processing otomatis YOLO
+        # 2. Resize Manual (Tetap diperlukan untuk performa)
         h, w = img_bgr.shape[:2]
         r = min(MAX_IMAGE_SIZE / h, MAX_IMAGE_SIZE / w)
         new_h, new_w = int(h * r), int(w * r)
-        # Pastikan dimensi kelipatan 32 (syarat YOLO)
         new_h = (new_h // 32) * 32
         new_w = (new_w // 32) * 32
-        # Hindari resize ke 0
         new_h, new_w = max(32, new_h), max(32, new_w)
         
         img_resized = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
-        # 3. [THE FIX] Konversi Manual ke Tensor
-        # Langkah: BGR -> RGB -> Normalize (0-1) -> Permute (HWC ke CHW) -> Batch (BCHW)
-        
+        # 3. Konversi ke Tensor
         img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
-        
-        # Gunakan torch.tensor() bukan torch.from_numpy().
-        # torch.tensor() membuat COPY data, sehingga aman dari bug numpy 2.0
         tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
-        
-        # Normalize 0-255 jadi 0.0-1.0
         tensor_img /= 255.0
-        
-        # Ubah posisi channel: (Height, Width, Channel) -> (Channel, Height, Width)
         tensor_img = tensor_img.permute(2, 0, 1)
-        
-        # Tambah dimensi Batch di depan: (CHW) -> (1, CHW)
         tensor_img = tensor_img.unsqueeze(0)
 
-        # 4. Prediksi
-        # Kita suapkan Tensor, bukan path/numpy. YOLO akan menerimanya langsung.
-        results = model(tensor_img, conf=0.5, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        # 4. Prediksi (Tambahkan threshold confidence biar tembok ga masuk)
+        # conf=0.40 artinya abaikan deteksi di bawah 40%
+        results = model(tensor_img, conf=0.40, verbose=False)
         result = results[0]
         
-        # 5. Visualisasi Manual
-        # Karena kita input Tensor, result.plot() kadang bermasalah render backgroundnya.
-        # Lebih aman kita gambar kotak manual di gambar OpenCV asli (img_resized).
         annotated_img = img_resized.copy()
-        
-        if result.boxes is not None:
-            for box in result.boxes:
-                # Koordinat Box
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-                x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
-                
-                # Info Class
-                class_id = int(box.cls[0])
-                conf = float(box.conf[0])
-                label = f"{model.names[class_id]} {conf:.0%}"
-                
-                # Gambar Kotak
-                # Warna Hijau (BGR: 0, 255, 0)
-                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                
-                # Gambar Label (Background label agar terbaca)
-                (w_text, h_text), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w_text, y1), (0, 255, 0), -1)
-                cv2.putText(annotated_img, label, (x1, y1 - 5), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+        predictions = []
+
+        # 5. LOGIKA BARU: Cari 1 Confidence Tertinggi
+        if result.boxes is not None and len(result.boxes) > 0:
+            # Cari box dengan nilai conf paling besar
+            best_box = max(result.boxes, key=lambda x: x.conf[0])
+            
+            # Ambil Info
+            class_id = int(best_box.cls[0])
+            conf = float(best_box.conf[0])
+            class_name = model.names[class_id]
+            label_text = f"{class_name} ({conf:.0%})"
+            
+            # --- VISUALISASI BERSIH (TANPA KOTAK) ---
+            # Kita tulis nama buahnya di pojok kiri atas gambar saja
+            # Warna background teks (Hitam transparan)
+            cv2.rectangle(annotated_img, (0, 0), (250, 40), (0, 0, 0), -1)
+            # Tulis Teks Putih
+            cv2.putText(annotated_img, label_text, (10, 30), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            
+            # Masukkan ke data JSON untuk ditampilkan di web
+            predictions.append({
+                'class': class_name,
+                'confidence': round(conf * 100, 2),
+                'bbox': [] # Kosongkan bbox karena kita tidak pakai kotak
+            })
+        else:
+            # Jika tidak ada yang terdeteksi (atau di bawah threshold)
+            predictions.append({
+                'class': 'Tidak Terdeteksi',
+                'confidence': 0,
+                'bbox': []
+            })
 
         # 6. Encode Hasil ke JPEG Base64
         success, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
@@ -143,16 +139,6 @@ def process_image(image_path):
             raise ValueError("Gagal encode output image")
 
         img_str = base64.b64encode(buffer).decode('utf-8')
-        
-        # 7. Ekstrak Data Prediksi JSON
-        predictions = []
-        if result.boxes is not None:
-            for box in result.boxes:
-                predictions.append({
-                    'class': model.names[int(box.cls[0])],
-                    'confidence': round(float(box.conf[0]) * 100, 2),
-                    'bbox': box.xyxy[0].tolist()
-                })
         
         return img_str, predictions
     
@@ -163,10 +149,8 @@ def process_image(image_path):
         return None, f"Error memproses gambar: {str(e)}"
     
     finally:
-        # Cleanup Memory
         if 'tensor_img' in locals(): del tensor_img
         if 'img_bgr' in locals(): del img_bgr
-        if 'img_resized' in locals(): del img_resized
         if 'results' in locals(): del results
         gc.collect()
 
@@ -335,4 +319,5 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
