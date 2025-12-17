@@ -108,7 +108,7 @@ def process_image(image_path):
 
         # 4. Prediksi
         # Kita suapkan Tensor, bukan path/numpy. YOLO akan menerimanya langsung.
-        results = model(tensor_img, verbose=False)
+        results = model(tensor_img, conf=0.5, imgsz=MAX_IMAGE_SIZE, verbose=False)
         result = results[0]
         
         # 5. Visualisasi Manual
@@ -335,3 +335,4 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
