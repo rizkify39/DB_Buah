@@ -1,16 +1,15 @@
 import os
 import gc
-import io
 import cv2
 import base64
 import numpy as np
 import torch
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
-from PIL import Image
 from ultralytics import YOLO
 
 # --- KONFIGURASI ENVIRONMENT ---
+# Menghindari error GUI di server/docker
 os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['DISPLAY'] = ''
@@ -63,100 +62,92 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def process_image(image_path):
+    """
+    PERBAIKAN TOTAL: MENGGUNAKAN PURE OPENCV (NO PIL).
+    Ini menghindari konflik tipe data Numpy yang terjadi saat konversi PIL -> CV2.
+    """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
-
+    
+    img_array = None
+    annotated_image_bgr = None
+    results = None
+    
     try:
-        # 1. Load image (PIL)
-        pil_img = Image.open(image_path).convert("RGB")
+        # 1. [PURE CV2] Baca file sebagai Bytes -> Decode ke Numpy Array (BGR)
+        # Ini melewati PIL sepenuhnya, jadi tidak ada lagi isu 'src is not numpy array'
+        img_array = cv2.imread(image_path)
 
-        # 2. Resize pakai PIL (aman)
-        w, h = pil_img.size
-        if max(w, h) > MAX_IMAGE_SIZE:
-            scale = MAX_IMAGE_SIZE / max(w, h)
-            pil_img = pil_img.resize(
-                (int(w * scale), int(h * scale)),
-                Image.Resampling.LANCZOS
-            )
+        # Jika imread gagal (misal path salah atau format aneh), coba baca binary manual
+        if img_array is None:
+            with open(image_path, 'rb') as f:
+                file_bytes = np.frombuffer(f.read(), np.uint8)
+                img_array = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-        # 3. PIL -> numpy RGB
-        img_rgb = np.array(pil_img, dtype=np.uint8)
+        # 2. Validasi Terakhir
+        if img_array is None:
+            raise ValueError("Gagal membaca gambar. File mungkin korup atau format tidak didukung OpenCV.")
 
-        # 4. RGB -> BGR (tanpa cv2)
-        img_bgr = img_rgb[:, :, ::-1].copy()
+        # 3. [PURE CV2] Resize
+        h, w = img_array.shape[:2]
+        if max(h, w) > MAX_IMAGE_SIZE:
+            scale = MAX_IMAGE_SIZE / max(h, w)
+            new_w = int(w * scale)
+            new_h = int(h * scale)
+            img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-        # 5. YOLO inference
-        results = model(img_bgr, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        # 4. PREDIKSI
+        # YOLOv8 secara native mendukung BGR numpy array dari OpenCV, 
+        # jadi kita tidak perlu convert ke RGB dulu sebelum prediksi.
+        results = model(img_array, imgsz=MAX_IMAGE_SIZE, verbose=False)
         result = results[0]
+        
+        # 5. Visualisasi
+        # Plot result (YOLO mengembalikan BGR numpy array saat inputnya BGR)
+        annotated_image_bgr = result.plot()
 
-        # 6. Image untuk digambar
-        annotated_image_bgr = img_bgr.copy()
+        # 6. [PURE CV2] Encode Hasil ke JPEG Base64
+        # Kita tidak pakai PIL.save() lagi, tapi pakai cv2.imencode()
+        # Hasil plot YOLO biasanya BGR. Kita pastikan encode sebagai JPEG.
+        success, buffer = cv2.imencode('.jpg', annotated_image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
+        
+        if not success:
+            raise ValueError("Gagal encode gambar hasil ke JPEG")
 
+        img_str = base64.b64encode(buffer).decode('utf-8')
+        
+        # 7. Ekstrak Data
         predictions = []
-
         if result.boxes is not None:
             for box in result.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
                 class_id = int(box.cls[0])
-                confidence = float(box.conf[0])
-
                 class_name = model.names[class_id]
-                # contoh: "Fresh Apple", "Stale Banana" → TETAP
-                label = f"{class_name} {confidence:.2f}"
-
-                # Draw bounding box
-                cv2.rectangle(
-                    annotated_image_bgr,
-                    (x1, y1),
-                    (x2, y2),
-                    (0, 255, 0),
-                    2
-                )
-
-                # Draw label
-                cv2.putText(
-                    annotated_image_bgr,
-                    label,
-                    (x1, max(y1 - 10, 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.6,
-                    (0, 255, 0),
-                    2
-                )
-
+                confidence = float(box.conf[0])
+                
                 predictions.append({
-                    'class': class_name,  # Fresh Apple, Stale Banana, dll
+                    'class': class_name,
                     'confidence': round(confidence * 100, 2),
-                    'bbox': [x1, y1, x2, y2]
+                    'bbox': box.xyxy[0].tolist()
                 })
-
-        # 7. BGR -> RGB (untuk web)
-        annotated_image_rgb = annotated_image_bgr[:, :, ::-1]
-
-        # 8. Encode ke base64
-        pil_result = Image.fromarray(annotated_image_rgb)
-        buffered = io.BytesIO()
-        pil_result.save(
-            buffered,
-            format="JPEG",
-            quality=JPEG_QUALITY,
-            optimize=True
-        )
-        img_str = base64.b64encode(buffered.getvalue()).decode()
-
+        
         return img_str, predictions
-
+    
     except Exception as e:
+        print(f"Processing Error: {str(e)}")
         import traceback
         traceback.print_exc()
         return None, f"Error memproses gambar: {str(e)}"
-
+    
     finally:
+        # Cleanup
+        if 'img_array' in locals(): del img_array
+        if 'annotated_image_bgr' in locals(): del annotated_image_bgr
+        if 'results' in locals(): del results
+        if 'result' in locals(): del result
         gc.collect()
 
-
-# --- DATA INFORMASI ---
+# --- DATA INFORMASI (Sama seperti sebelumnya) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -294,6 +285,8 @@ def predict():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         try:
             file.save(filepath)
+            
+            # --- MASUK KE PROSES PURE CV2 ---
             processed_image, predictions = process_image(filepath)
             
             # Hapus file setelah proses
@@ -319,4 +312,3 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
