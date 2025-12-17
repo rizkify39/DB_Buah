@@ -9,7 +9,6 @@ from werkzeug.utils import secure_filename
 from ultralytics import YOLO
 
 # --- KONFIGURASI ENVIRONMENT ---
-# Menghindari error GUI di server/docker
 os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
 os.environ['DISPLAY'] = ''
@@ -63,53 +62,41 @@ def allowed_file(filename):
 
 def process_image(image_path):
     """
-    PERBAIKAN TOTAL: MENGGUNAKAN PURE OPENCV (NO PIL).
-    Ini menghindari konflik tipe data Numpy yang terjadi saat konversi PIL -> CV2.
+    PERBAIKAN FINAL (V3): 
+    Menyerahkan proses loading gambar sepenuhnya ke YOLO via File Path.
+    Ini bypass error 'Unsupported image type' pada Numpy Array.
     """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
     
-    img_array = None
     annotated_image_bgr = None
     results = None
     
     try:
-        # 1. [PURE CV2] Baca file sebagai Bytes -> Decode ke Numpy Array (BGR)
-        # Ini melewati PIL sepenuhnya, jadi tidak ada lagi isu 'src is not numpy array'
-        img_array = cv2.imread(image_path)
-
-        # Jika imread gagal (misal path salah atau format aneh), coba baca binary manual
-        if img_array is None:
-            with open(image_path, 'rb') as f:
-                file_bytes = np.frombuffer(f.read(), np.uint8)
-                img_array = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
-
-        # 2. Validasi Terakhir
-        if img_array is None:
-            raise ValueError("Gagal membaca gambar. File mungkin korup atau format tidak didukung OpenCV.")
-
-        # 3. [PURE CV2] Resize
-        h, w = img_array.shape[:2]
+        # 1. PREDIKSI LANGSUNG DARI PATH
+        # Kita tidak load gambar manual pakai cv2/PIL. 
+        # Kita kasih alamat filenya, biar YOLO yang urus buka dan baca filenya.
+        # Ini support semua format standar (JPG, PNG, GIF, dll).
+        results = model(image_path, imgsz=MAX_IMAGE_SIZE, verbose=False)
+        result = results[0]
+        
+        # 2. Visualisasi
+        # result.plot() mengembalikan Numpy Array format BGR (OpenCV format)
+        annotated_image_bgr = result.plot()
+        
+        # 3. Resize Hasil (Opsional, agar ringan di web)
+        # Karena kita prediksi dari path, plot() mungkin mengembalikan resolusi asli yg besar.
+        # Kita kecilkan sebelum dikirim ke browser.
+        h, w = annotated_image_bgr.shape[:2]
         if max(h, w) > MAX_IMAGE_SIZE:
             scale = MAX_IMAGE_SIZE / max(h, w)
             new_w = int(w * scale)
             new_h = int(h * scale)
-            img_array = cv2.resize(img_array, (new_w, new_h), interpolation=cv2.INTER_AREA)
+            annotated_image_bgr = cv2.resize(annotated_image_bgr, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-        # 4. PREDIKSI
-        # YOLOv8 secara native mendukung BGR numpy array dari OpenCV, 
-        # jadi kita tidak perlu convert ke RGB dulu sebelum prediksi.
-        results = model(img_array, imgsz=MAX_IMAGE_SIZE, verbose=False)
-        result = results[0]
-        
-        # 5. Visualisasi
-        # Plot result (YOLO mengembalikan BGR numpy array saat inputnya BGR)
-        annotated_image_bgr = result.plot()
-
-        # 6. [PURE CV2] Encode Hasil ke JPEG Base64
-        # Kita tidak pakai PIL.save() lagi, tapi pakai cv2.imencode()
-        # Hasil plot YOLO biasanya BGR. Kita pastikan encode sebagai JPEG.
+        # 4. Encode ke JPEG Base64
+        # Menggunakan cv2.imencode karena inputnya sudah pasti BGR dari result.plot()
         success, buffer = cv2.imencode('.jpg', annotated_image_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         
         if not success:
@@ -117,7 +104,7 @@ def process_image(image_path):
 
         img_str = base64.b64encode(buffer).decode('utf-8')
         
-        # 7. Ekstrak Data
+        # 5. Ekstrak Data
         predictions = []
         if result.boxes is not None:
             for box in result.boxes:
@@ -141,13 +128,12 @@ def process_image(image_path):
     
     finally:
         # Cleanup
-        if 'img_array' in locals(): del img_array
         if 'annotated_image_bgr' in locals(): del annotated_image_bgr
         if 'results' in locals(): del results
         if 'result' in locals(): del result
         gc.collect()
 
-# --- DATA INFORMASI (Sama seperti sebelumnya) ---
+# --- DATA INFORMASI ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -286,7 +272,7 @@ def predict():
         try:
             file.save(filepath)
             
-            # --- MASUK KE PROSES PURE CV2 ---
+            # --- MASUK KE PROSES INFERENCE (BY PASSING PATH) ---
             processed_image, predictions = process_image(filepath)
             
             # Hapus file setelah proses
