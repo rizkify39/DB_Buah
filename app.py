@@ -68,32 +68,22 @@ def process_image_v2(image_bytes):
 
     try:
         # ===============================
-        # 0. PAKSA image_bytes = BYTES
+        # 1. LOAD IMAGE PAKE PIL (BUKAN CV2.IMDECODE)
         # ===============================
-        if isinstance(image_bytes, str):
-            # kemungkinan base64
-            image_bytes = base64.b64decode(image_bytes)
-
-        if isinstance(image_bytes, memoryview):
-            image_bytes = image_bytes.tobytes()
-
-        if not isinstance(image_bytes, (bytes, bytearray)):
-            raise TypeError(f"image_bytes HARUS bytes, dapet: {type(image_bytes)}")
-
-        # ===============================
-        # 1. LOAD IMAGE (FINAL FIX)
-        # ===============================
-        nparr = np.frombuffer(image_bytes, dtype=np.uint8)
-
-        if nparr.size == 0:
-            raise ValueError("Buffer kosong")
-
-        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-        if img_bgr is None:
-            raise ValueError("cv2.imdecode gagal (format rusak / bukan image)")
-
-        img_bgr = np.ascontiguousarray(img_bgr, dtype=np.uint8)
+        # Kita bungkus bytes jadi Stream biar bisa dibaca PIL
+        image_stream = io.BytesIO(image_bytes)
+        
+        # Buka pake PIL (Jauh lebih stabil di Linux Server)
+        img_pil = Image.open(image_stream)
+        
+        # Pastikan format RGB (handle kalo user upload PNG transparan/RGBA)
+        img_pil = img_pil.convert("RGB")
+        
+        # Convert ke Numpy Array
+        img_np = np.array(img_pil)
+        
+        # PIL itu RGB, OpenCV butuh BGR. Kita tukar warnanya.
+        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
         # ===============================
         # 2. YOLO INFERENCE
@@ -105,38 +95,45 @@ def process_image_v2(image_bytes):
             verbose=False
         )
 
-
         result = results[0]
 
-        annotated_img = result.orig_img.copy()
+        # Ambil gambar asli dari hasil plot (atau copy dari img_bgr)
+        annotated_img = img_bgr.copy()
 
+        # Gambar Kotak Manual (Lebih aman daripada result.plot() di headless server)
         if result.boxes is not None:
             for box in result.boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
-                label = f"{model.names[cls]} {conf:.2f}"
-        
-                cv2.rectangle(
-                    annotated_img,
-                    (x1, y1),
-                    (x2, y2),
-                    (0, 255, 0),
-                    2
-                )
-        
+                
+                # Cek index class biar ga out of bound
+                if cls < len(model.names):
+                    label_name = model.names[cls]
+                else:
+                    label_name = str(cls)
+                    
+                label = f"{label_name} {conf:.0%}"
+                
+                # Gambar Rectangle
+                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # Gambar Label Background
+                (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
+                
+                # Tulisan
                 cv2.putText(
                     annotated_img,
                     label,
-                    (x1, max(y1 - 10, 10)),
+                    (x1, y1 - 5),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.5,
-                    (0, 255, 0),
-                    2
+                    (255, 255, 255),
+                    1
                 )
         
-        annotated_img = np.ascontiguousarray(annotated_img, dtype=np.uint8)
-
+        # Encode balik ke JPG buat dikirim ke Web
         success, buffer = cv2.imencode(
             ".jpg",
             annotated_img,
@@ -144,14 +141,15 @@ def process_image_v2(image_bytes):
         )
 
         if not success:
-            return None, "Encode gagal"
+            return None, "Encode output gagal"
 
         predictions = []
 
         if result.boxes is not None and len(result.boxes) > 0:
             best = max(result.boxes, key=lambda x: x.conf[0])
+            cls_idx = int(best.cls[0])
             predictions.append({
-                "class": model.names[int(best.cls[0])],
+                "class": model.names[cls_idx] if cls_idx < len(model.names) else "Unknown",
                 "confidence": round(float(best.conf[0]) * 100, 2),
                 "bbox": []
             })
@@ -166,6 +164,8 @@ def process_image_v2(image_bytes):
 
     except Exception as e:
         print("🔥 REAL ERROR:", e)
+        import traceback
+        traceback.print_exc()
         return None, str(e)
 
     finally:
@@ -332,6 +332,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
