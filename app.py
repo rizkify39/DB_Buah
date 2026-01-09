@@ -27,7 +27,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 JPEG_QUALITY = 70
 
-# --- DATABASE LENGKAP (RESTORED) ---
+# --- DATABASE INFORMASI LENGKAP (ORIGINAL) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -144,7 +144,7 @@ def get_model():
             if os.path.exists('best.pt'):
                 _model = YOLO('best.pt')
                 _model.to('cpu')
-                print("✅ Model berhasil dimuat di CPU!")
+                print(f"✅ Model Loaded! Classes: {_model.names}")
             else:
                 print("❌ File model 'best.pt' tidak ditemukan")
         except Exception as e:
@@ -156,25 +156,33 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+def normalize_string(s):
+    """
+    Membersihkan string biar gampang dicocokkan.
+    Contoh: "Fresh_Apple" -> "freshapple"
+    """
+    return s.lower().replace("_", "").replace(" ", "").replace("-", "")
+
 def process_image_file(filepath):
     model = get_model()
     annotated_img = None
 
     try:
         # 1. YOLO INFERENCE
-        # conf=0.10: Ambang batas rendah agar 'stale' yang samar tetap terdeteksi
+        # conf=0.15: Threshold sensitif agar buah busuk (stale) yg samar tetap kena
         results = model.predict(
             source=filepath, 
-            conf=0.10, 
+            conf=0.15, 
             iou=0.45,
             device="cpu",
-            verbose=False,
+            verbose=True,
             imgsz=640
         )
 
         result = results[0]
 
-        # 2. AMBIL GAMBAR BERSIH (TANPA KOTAK)
+        # 2. AMBIL GAMBAR BERSIH (TANPA KOTAK VISUAL)
+        # Sesuai request: User ingin gambar polos, tidak ada bounding box
         annotated_img = result.orig_img.copy()
         annotated_img = np.ascontiguousarray(annotated_img)
 
@@ -183,33 +191,34 @@ def process_image_file(filepath):
         if not success:
             return None, "Gagal encode hasil gambar"
 
-        # 4. PREDIKSI DAN MAPPING KE INDONESIA
+        # 4. PREDIKSI
         predictions = []
         
         if result.boxes is not None and len(result.boxes) > 0:
-            # Ambil deteksi dengan confidence tertinggi
+            # Ambil deteksi terbaik (Highest Confidence)
             best = max(result.boxes, key=lambda x: x.conf[0])
             cls_idx = int(best.cls[0])
             
-            # Ambil nama Inggris dari model
-            english_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
+            # Nama RAW dari model (misal: "stale_apple" atau "Stale Apple")
+            raw_model_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
             
-            # --- LOGIKA SMART MATCHING (CASE INSENSITIVE) ---
-            indo_name = english_name # Default kalau gak ketemu
+            # --- LOGIKA SMART MATCHING (ANTI-TYPO) ---
+            indo_name = raw_model_name # Default (kalau gak ketemu di DB)
+            found_match = False
             
-            # 1. Coba match langsung
-            if english_name in FRESHNESS_INFO:
-                indo_name = FRESHNESS_INFO[english_name]['name']
-            else:
-                # 2. Coba match dengan normalisasi (hapus spasi/_ dan lowercase)
-                # Contoh: "Stale_Apple" -> "staleapple" cocok dengan "Stale Apple" -> "staleapple"
-                normalized_english = english_name.lower().replace("_", "").replace(" ", "")
-                
-                for key in FRESHNESS_INFO:
-                    normalized_key = key.lower().replace("_", "").replace(" ", "")
-                    if normalized_key == normalized_english:
-                        indo_name = FRESHNESS_INFO[key]['name']
-                        break
+            # Normalisasi nama dari model
+            norm_model_name = normalize_string(raw_model_name)
+
+            # Loop database info untuk mencari yg cocok
+            for key, info in FRESHNESS_INFO.items():
+                if normalize_string(key) == norm_model_name:
+                    indo_name = info['name']
+                    found_match = True
+                    break
+            
+            # Jika tidak match persis, coba cek substring (opsional, buat jaga-jaga)
+            if not found_match:
+                print(f"WARNING: Tidak ada match database untuk '{raw_model_name}'. Menggunakan nama asli.")
 
             predictions.append({
                 "class": indo_name,
@@ -235,10 +244,23 @@ def process_image_file(filepath):
         gc.collect()
 
 # --- ROUTES ---
+
 @app.route('/')
 def index():
     model = get_model()
     return render_template('index.html', model_loaded=model is not None)
+
+# Route Debug buat ngecek nama class asli di server
+@app.route('/debug_classes')
+def debug_classes():
+    model = get_model()
+    if model:
+        return jsonify({
+            "status": "Model Loaded",
+            "classes": model.names
+        })
+    else:
+        return jsonify({"status": "Model Not Loaded"})
 
 @app.route('/classification')
 def classification():
@@ -247,6 +269,7 @@ def classification():
 
 @app.route('/information')
 def information():
+    # Mengirim data info agar bisa dirender di halaman info
     ordered_info = {key: FRESHNESS_INFO[key] for key in FRESHNESS_ORDER}
     return render_template('information.html', freshness_info=ordered_info)
 
@@ -266,10 +289,14 @@ def predict():
     filepath = None
     try:
         if file and allowed_file(file.filename):
+            # Generate nama file unik
             filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            # Simpan fisik (Safety Mode)
             file.save(filepath)
 
+            # Proses
             processed_image, predictions = process_image_file(filepath)
 
             if processed_image:
@@ -286,6 +313,7 @@ def predict():
         return jsonify({'success': False, 'error': str(e)})
 
     finally:
+        # Hapus file sampah
         if filepath and os.path.exists(filepath):
             try:
                 os.remove(filepath)
