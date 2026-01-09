@@ -1,7 +1,10 @@
 Flask==2.3.3
 gunicorn==20.1.0
-numpy<2.0.0
+# 🔥 KUNCI KERAS NUMPY
+numpy==1.26.4
 opencv-python-headless==4.8.0.74
 Pillow==10.0.0
+# Ultralytics STABIL
 ultralytics==8.0.196
-torch>=2.0.0
+# Torch KOMPATIBEL DENGAN NUMPY 1.26
+torch==2.0.1
