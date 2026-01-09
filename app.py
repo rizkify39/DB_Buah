@@ -72,16 +72,22 @@ def process_image(file_stream):
     tensor_img = None
     
     try:
-        # --- PERBAIKAN DISINI: BACA LANGSUNG DARI BYTES ---
-        # Baca stream file ke array numpy
-        file_bytes = np.frombuffer(file_stream, np.uint8)
-        # Decode menjadi gambar OpenCV
-        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        # --- PERBAIKAN UTAMA DISINI ---
+        # 1. Cek apakah input valid
+        if not file_stream:
+             raise ValueError("Data file kosong")
+
+        # 2. Konversi Raw Bytes -> Numpy Array (### PENTING ###)
+        # Tanpa baris ini, error 'buf is not a numpy array' akan muncul
+        np_arr = np.frombuffer(file_stream, np.uint8)
+        
+        # 3. Decode Numpy Array -> Gambar OpenCV
+        img_bgr = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
         
         if img_bgr is None:
-            raise ValueError("Gagal decode gambar (file korup/bukan gambar)")
+            raise ValueError("Gagal decode gambar (file korup atau format tidak didukung)")
 
-        # --- TEKNIK LETTERBOX (LANJUTKAN SEPERTI BIASA) ---
+        # --- TEKNIK LETTERBOX ---
         target_size = 640 
         
         h, w = img_bgr.shape[:2]
@@ -96,21 +102,20 @@ def process_image(file_stream):
         dh = (target_size - new_h) // 2
         canvas[dh:dh+new_h, dw:dw+new_w] = img_resized
 
-        # 2. Konversi ke Tensor
+        # Konversi ke Tensor
         img_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
         tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
         tensor_img /= 255.0
         tensor_img = tensor_img.permute(2, 0, 1)
         tensor_img = tensor_img.unsqueeze(0)
 
-        # 3. Prediksi
+        # Prediksi
         results = model(tensor_img, conf=0.25, verbose=False)
         result = results[0]
         
         annotated_img = img_bgr.copy() 
         predictions = []
 
-        # 4. Ambil Prediksi Terbaik
         if result.boxes is not None and len(result.boxes) > 0:
             best_box = max(result.boxes, key=lambda x: x.conf[0])
             
@@ -139,7 +144,6 @@ def process_image(file_stream):
                 'bbox': []
             })
 
-        # 5. Encode Hasil
         success, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         if not success:
             raise ValueError("Gagal encode output image")
@@ -149,8 +153,6 @@ def process_image(file_stream):
     
     except Exception as e:
         print(f"Processing Error: {str(e)}")
-        # import traceback
-        # traceback.print_exc()
         return None, f"Error memproses gambar: {str(e)}"
     
     finally:
@@ -293,10 +295,10 @@ def predict():
     
     if file and allowed_file(file.filename):
         try:
-            # --- PERBAIKAN DISINI ---
-            # Baca file langsung dari memory (tidak perlu save ke folder upload)
-            file_bytes = file.read() 
+            # BACA FILE JADI BYTES
+            file_bytes = file.read()  # <--- Ini menghasilkan bytes
             
+            # Oper bytes tersebut ke fungsi yang sudah diperbaiki
             processed_image, predictions = process_image(file_bytes)
             
             if processed_image:
@@ -315,6 +317,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
