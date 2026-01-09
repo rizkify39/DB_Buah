@@ -60,39 +60,33 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def process_image(numpy_array_input):
+def process_image(image_bytes):
     model = get_model()
-    
+
     try:
-        # --- LANGKAH DECODE ---
-        # Input sudah pasti numpy array dari route, jadi langsung decode
-        img_bgr = cv2.imdecode(numpy_array_input, cv2.IMREAD_COLOR)
-        
-        if img_bgr is None:
-            return None, "OpenCV gagal decode (File bukan gambar valid)"
+        # ===============================
+        # 1. DECODE (PIL)
+        # ===============================
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        img_rgb = np.array(image)
 
-        # --- PROSES RESIZE & PREDIKSI (Sama seperti sebelumnya) ---
-        target_size = 640
-        h, w = img_bgr.shape[:2]
-        scale = min(target_size / h, target_size / w)
-        new_w, new_h = int(w * scale), int(h * scale)
-        
-        img_resized = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
-        canvas = np.full((target_size, target_size, 3), 114, dtype=np.uint8)
-        
-        dw = (target_size - new_w) // 2
-        dh = (target_size - new_h) // 2
-        canvas[dh:dh+new_h, dw:dw+new_w] = img_resized
+        if img_rgb is None or img_rgb.size == 0:
+            return None, "Gagal membaca gambar"
 
-        img_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
-        tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
-        tensor_img /= 255.0
-        tensor_img = tensor_img.permute(2, 0, 1).unsqueeze(0)
+        # ===============================
+        # 2. YOLOv8 LANGSUNG TERIMA IMAGE
+        # ===============================
+        results = model(
+            img_rgb,
+            conf=0.25,
+            imgsz=640,
+            device="cpu",
+            verbose=False
+        )
 
-        results = model(tensor_img, conf=0.25, verbose=False)
         result = results[0]
-        
-        annotated_img = img_bgr.copy() 
+        annotated_img = result.plot()  # BGR output (OpenCV-ready)
+
         predictions = []
 
         if result.boxes is not None and len(result.boxes) > 0:
@@ -100,12 +94,7 @@ def process_image(numpy_array_input):
             class_id = int(best_box.cls[0])
             conf = float(best_box.conf[0])
             class_name = model.names[class_id]
-            
-            label_text = f"{class_name} ({conf:.0%})"
-            cv2.rectangle(annotated_img, (0, 0), (300, 60), (0, 0, 0), -1)
-            cv2.putText(annotated_img, label_text, (15, 40), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
-            
+
             predictions.append({
                 'class': class_name,
                 'confidence': round(conf * 100, 2),
@@ -118,16 +107,24 @@ def process_image(numpy_array_input):
                 'bbox': []
             })
 
-        success, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-        if not success:
-            return None, "Gagal encode hasil gambar"
+        # ===============================
+        # 3. ENCODE OUTPUT
+        # ===============================
+        success, buffer = cv2.imencode(
+            ".jpg",
+            annotated_img,
+            [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
+        )
 
-        return base64.b64encode(buffer).decode('utf-8'), predictions
+        if not success:
+            return None, "Gagal encode gambar hasil"
+
+        return base64.b64encode(buffer).decode("utf-8"), predictions
 
     except Exception as e:
-        print(f"Error di process_image: {e}")
-        return None, f"Error visualisasi: {str(e)}"
-    
+        print(f"ERROR process_image: {e}")
+        return None, str(e)
+
     finally:
         gc.collect()
         
@@ -271,14 +268,14 @@ def predict():
             
             # 1. Baca sebagai bytearray (mutable), lalu ubah ke Numpy Array
             # Ini lebih aman daripada np.frombuffer untuk file upload
-            in_memory_file = np.asarray(bytearray(file.read()), dtype=np.uint8)
+            image_bytes = file.read()
             
             # 2. Cek apakah array valid
             if in_memory_file.size == 0:
                  return jsonify({'success': False, 'error': 'File terbaca 0 bytes (Kosong/Corrupt)'})
 
             # 3. Kirim ARRAY (bukan bytes) ke fungsi pemroses
-            processed_image, predictions = process_image(in_memory_file)
+            processed_image, predictions = process_image(image_bytes)
             
             if processed_image:
                 return jsonify({
@@ -300,6 +297,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
