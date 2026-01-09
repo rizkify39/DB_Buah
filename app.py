@@ -173,61 +173,89 @@ def process_image_file(filepath):
     annotated_img = None
 
     try:
-        # 1. YOLO INFERENCE
-        # Gunakan conf 0.15 biar 'stale' yang samar tetap kena
+        # --- DEBUG: LIHAT UKURAN GAMBAR ASLI ---
+        # Kita baca dulu pake OpenCV cuma buat cek resolusi (gak dipake buat prediksi)
+        temp_img = cv2.imread(filepath)
+        h, w = temp_img.shape[:2]
+        print(f"📷 [INFO] Ukuran Gambar Asli: {w}x{h}")
+
+        # ===============================
+        # 1. YOLO INFERENCE (TUNING MODE)
+        # ===============================
         results = model.predict(
             source=filepath, 
-            conf=0.15, 
-            iou=0.45,
+            # conf: Kalau masih 'kacau' banyak kotak salah, NAIKKAN jadi 0.4 atau 0.5
+            # Kalau 'tidak terdeteksi', TURUNKAN jadi 0.15
+            conf=0.25, 
+            
+            # iou: Semakin tinggi (misal 0.7), semakin tolerir sama kotak tumpang tindih
+            iou=0.5,
+            
             device="cpu",
-            verbose=True,
-            imgsz=640
+            
+            # imgsz: JANGAN DI-HARDCODE ke 640 kalau gambar lu gede2. 
+            # Kita set 640 sebagai base, tapi biarkan dia flexible.
+            # Atau hapus baris ini biar auto.
+            imgsz=640, 
+
+            # rect: PENTING! Biar gambar potrait gak dipenyet jadi kotak (bikin pisang jadi apel)
+            rect=True,
+
+            # agnostic_nms: Cegah deteksi double (misal 1 buah dideteksi jadi 'Fresh' DAN 'Stale')
+            agnostic_nms=True,
+            
+            verbose=True
         )
 
         result = results[0]
         
-        # DEBUG LOG DI RAILWAY
-        print(f"🔎 [DEBUG] Boxes Found: {len(result.boxes)}")
-        if len(result.boxes) > 0:
-            print(f"🔎 [DEBUG] Classes Detected: {result.boxes.cls.tolist()}")
-
-        # 2. AMBIL GAMBAR BERSIH
-        annotated_img = result.orig_img.copy()
-        annotated_img = np.ascontiguousarray(annotated_img)
+        # DEBUG LOG
+        print(f"🔎 [DEBUG] Detections Found: {len(result.boxes)}")
+        
+        # 2. AMBIL GAMBAR HASIL (Visualisasi Bawaan YOLO dulu buat Cek)
+        # result.plot() akan menggambar kotak + label default YOLO.
+        # Kita pakai ini dulu untuk memastikan apakah modelnya "melihat" dengan benar.
+        # Nanti kalau sudah bener, baru kita custom gambar kotaknya lagi.
+        annotated_img = result.plot() # <-- Pake bawaan YOLO dulu biar yakin
+        
+        # Convert BGR (OpenCV) biar warna bener
+        # annotated_img = cv2.cvtColor(annotated_img, cv2.COLOR_RGB2BGR) # Kadang plot() outputnya RGB/BGR tergantung versi
+        # Biasanya result.plot() outputnya BGR (OpenCV format) jadi aman.
 
         # 3. ENCODE JPG
         success, buffer = cv2.imencode(".jpg", annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         if not success:
             return None, "Gagal encode hasil gambar"
 
-        # 4. PREDIKSI
+        # 4. PREDIKSI (DATA JSON)
         predictions = []
         
         if result.boxes is not None and len(result.boxes) > 0:
-            best = max(result.boxes, key=lambda x: x.conf[0])
-            cls_idx = int(best.cls[0])
+            # Ambil semua deteksi, bukan cuma yang terbaik
+            # Biar lu tau apa aja yang "kacau" itu
+            for box in result.boxes:
+                cls_idx = int(box.cls[0])
+                conf_score = float(box.conf[0])
+                
+                raw_model_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
+                
+                # Smart Match ke Indo
+                indo_name = raw_model_name
+                norm_model_name = normalize_string(raw_model_name)
+                for key, info in FRESHNESS_INFO.items():
+                    if normalize_string(key) == norm_model_name:
+                        indo_name = info['name']
+                        break
+                
+                predictions.append({
+                    "class": indo_name,
+                    "confidence": round(conf_score * 100, 2),
+                    "bbox": box.xyxy[0].tolist() # Koordinat kotak
+                })
+                
+            # Urutkan dari confidence tertinggi
+            predictions = sorted(predictions, key=lambda x: x['confidence'], reverse=True)
             
-            raw_model_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
-            
-            # --- SMART MATCHING ---
-            indo_name = raw_model_name 
-            found_match = False
-            norm_model_name = normalize_string(raw_model_name)
-
-            for key, info in FRESHNESS_INFO.items():
-                if normalize_string(key) == norm_model_name:
-                    indo_name = info['name']
-                    found_match = True
-                    break
-            
-            if not found_match:
-                print(f"WARNING: Tidak ada match info untuk '{raw_model_name}'")
-
-            predictions.append({
-                "class": indo_name,
-                "confidence": round(float(best.conf[0]) * 100, 2),
-                "bbox": []
-            })
         else:
             predictions.append({
                 "class": "Tidak Terdeteksi",
@@ -316,3 +344,4 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
