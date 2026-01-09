@@ -10,7 +10,6 @@ from werkzeug.utils import secure_filename
 from ultralytics import YOLO
 from PIL import Image
 
-
 # --- KONFIGURASI ENVIRONMENT ---
 os.environ['OPENCV_DISABLE_GUI'] = '1'
 os.environ['QT_QPA_PLATFORM'] = 'offscreen'
@@ -72,63 +71,73 @@ def process_image_v2(image_bytes):
         # ===============================
         image_stream = io.BytesIO(image_bytes)
         img_pil = Image.open(image_stream)
+        
+        # Pastikan RGB (Handle transparansi PNG dll)
         img_pil = img_pil.convert("RGB")
-        
-        # Convert ke Numpy
-        img_np = np.array(img_pil)
 
         # ===============================
-        # 2. FIX MEMORY LAYOUT (INI KUNCINYA!)
+        # 2. YOLO INFERENCE (INPUT PIL LANGSUNG)
         # ===============================
-        # Kita convert RGB ke BGR manual pake slicing
-        img_bgr_view = img_np[:, :, ::-1]
-        
-        # 🔥 WAJIB: Paksa jadi contiguous array. 
-        # Tanpa ini, OpenCV di dalam YOLO bakal crash karena memorinya ga urut.
-        img_bgr = np.ascontiguousarray(img_bgr_view)
-
-        # DEBUG: Cek tipe data sebelum masuk YOLO (Biar lu tau ini sukses)
-        print(f"DEBUG INPUT YOLO -> Shape: {img_bgr.shape}, Dtype: {img_bgr.dtype}, Contiguous: {img_bgr.flags['C_CONTIGUOUS']}")
-
-        # ===============================
-        # 3. YOLO INFERENCE
-        # ===============================
-        # Sekarang kita kirim array yang udah 'sehat' secara memori
+        # Kita masukkan objek PIL langsung ke YOLO.
+        # Ini MEM-BYPASS error 'cv2.resize' karena YOLO akan handle resizing internal tanpa OpenCV luar.
         results = model.predict(
-            source=img_bgr,
+            source=img_pil,
             conf=0.25,
             device="cpu",
-            verbose=False
+            verbose=False,
+            imgsz=640 # Force size biar konsisten
         )
 
         result = results[0]
-        
-        # Kita pake img_bgr untuk drawing, pastikan copy biar aman
-        annotated_img = img_bgr.copy()
 
         # ===============================
-        # 4. GAMBAR KOTAK
+        # 3. PREPARE GAMBAR UNTUK DRAWING
+        # ===============================
+        # Kita butuh numpy array sekarang untuk menggambar kotak
+        img_np = np.array(img_pil)
+        
+        # Convert RGB (PIL) ke BGR (OpenCV) Manual Slicing
+        # Ini MEM-BYPASS error 'cv2.cvtColor' src not numpy array
+        img_bgr = img_np[:, :, ::-1].copy()
+        
+        # Force Contiguous Memory (PENTING untuk OpenCV imencode)
+        annotated_img = np.ascontiguousarray(img_bgr)
+
+        # ===============================
+        # 4. GAMBAR KOTAK HASIL
         # ===============================
         if result.boxes is not None:
             for box in result.boxes:
+                # Koordinat
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
                 
+                # Nama Label
                 label_name = model.names[cls] if cls < len(model.names) else str(cls)
                 label = f"{label_name} {conf:.0%}"
                 
+                # Gambar Kotak
                 cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                
+                # Gambar Label Background
                 (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
-                cv2.putText(annotated_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                
+                # Teks Label
+                cv2.putText(
+                    annotated_img, 
+                    label, 
+                    (x1, y1 - 5), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    0.5, 
+                    (255, 255, 255), 
+                    1
+                )
         
         # ===============================
-        # 5. ENCODE OUTPUT
+        # 5. ENCODE JADI JPG
         # ===============================
-        # Sekali lagi, pastikan contiguous sebelum masuk cv2.imencode
-        annotated_img = np.ascontiguousarray(annotated_img)
-        
         success, buffer = cv2.imencode(
             ".jpg",
             annotated_img,
@@ -138,6 +147,7 @@ def process_image_v2(image_bytes):
         if not success:
             return None, "Encode output gagal"
 
+        # Format JSON Response
         predictions = []
         if result.boxes is not None and len(result.boxes) > 0:
             best = max(result.boxes, key=lambda x: x.conf[0])
@@ -164,8 +174,8 @@ def process_image_v2(image_bytes):
 
     finally:
         gc.collect()
-        
-# --- DATA INFORMASI (Tetap Sama) ---
+
+# --- DATA INFORMASI LENGKAP ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -303,7 +313,7 @@ def predict():
             file.seek(0)
             image_bytes = file.read()
 
-            # 🔥 FIXED
+            # Panggil fungsi Fix (Input PIL)
             processed_image, predictions = process_image_v2(image_bytes)
 
             if processed_image:
@@ -321,7 +331,7 @@ def predict():
             return jsonify({'success': False, 'error': str(e)})
     
     return jsonify({'success': False, 'error': 'Format file invalid'})
-    
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
