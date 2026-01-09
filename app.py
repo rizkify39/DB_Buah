@@ -1,14 +1,12 @@
 import os
 import gc
-import io
 import cv2
 import base64
 import numpy as np
 import torch
+import uuid
 from flask import Flask, render_template, request, jsonify
-from werkzeug.utils import secure_filename
 from ultralytics import YOLO
-from PIL import Image
 
 # --- KONFIGURASI ENVIRONMENT ---
 os.environ['OPENCV_DISABLE_GUI'] = '1'
@@ -19,16 +17,17 @@ os.environ['MPLBACKEND'] = 'Agg'
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'freshness_classifier_secret_key_2024')
 
-# --- KONFIGURASI UPLOAD & MEMORI ---
+# --- KONFIGURASI UPLOAD ---
+# Pastikan folder ini ada dan bisa ditulis
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024  # Limit 8MB
+app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024 
 
-MAX_IMAGE_SIZE = 1024
-JPEG_QUALITY = 70
-
+# Buat folder jika belum ada
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+JPEG_QUALITY = 70
 
 # --- MODEL HANDLING ---
 _model = None
@@ -45,10 +44,6 @@ def get_model():
             
             if os.path.exists('best.pt'):
                 _model = YOLO('best.pt')
-                try:
-                    _model.fuse()
-                except:
-                    pass
                 _model.to('cpu')
                 print("✅ Model berhasil dimuat di CPU!")
             else:
@@ -62,92 +57,74 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def process_image_v2(image_bytes):
+def process_image_file(filepath):
+    """
+    Fungsi ini menerima PATH FILE (String), bukan bytes/stream.
+    Biarkan YOLO yang loading gambarnya sendiri.
+    """
     model = get_model()
+    annotated_img = None
 
     try:
         # ===============================
-        # 1. LOAD IMAGE PAKE PIL
+        # 1. YOLO INFERENCE (INPUT PATH FILE)
         # ===============================
-        image_stream = io.BytesIO(image_bytes)
-        img_pil = Image.open(image_stream)
-        
-        # Pastikan RGB (Handle transparansi PNG dll)
-        img_pil = img_pil.convert("RGB")
-
-        # ===============================
-        # 2. YOLO INFERENCE (INPUT PIL LANGSUNG)
-        # ===============================
-        # Kita masukkan objek PIL langsung ke YOLO.
-        # Ini MEM-BYPASS error 'cv2.resize' karena YOLO akan handle resizing internal tanpa OpenCV luar.
+        # Kita kasih path file langsung. YOLO sangat stabil kalau baca dari disk.
         results = model.predict(
-            source=img_pil,
+            source=filepath, 
             conf=0.25,
             device="cpu",
             verbose=False,
-            imgsz=640 # Force size biar konsisten
+            imgsz=640
         )
 
         result = results[0]
 
         # ===============================
-        # 3. PREPARE GAMBAR UNTUK DRAWING
+        # 2. AMBIL GAMBAR DARI HASIL YOLO
         # ===============================
-        # Kita butuh numpy array sekarang untuk menggambar kotak
-        img_np = np.array(img_pil)
-        
-        # Convert RGB (PIL) ke BGR (OpenCV) Manual Slicing
-        # Ini MEM-BYPASS error 'cv2.cvtColor' src not numpy array
-        img_bgr = img_np[:, :, ::-1].copy()
-        
-        # Force Contiguous Memory (PENTING untuk OpenCV imencode)
-        annotated_img = np.ascontiguousarray(img_bgr)
+        # result.orig_img adalah numpy array yang SUDAH DILOAD oleh YOLO.
+        # Kita pakai ini buat digambar. Gak perlu cv2.imread lagi.
+        annotated_img = result.orig_img.copy()
+
+        # Pastikan contiguous array (Wajib buat OpenCV)
+        annotated_img = np.ascontiguousarray(annotated_img)
 
         # ===============================
-        # 4. GAMBAR KOTAK HASIL
+        # 3. GAMBAR KOTAK (VISUALISASI)
         # ===============================
         if result.boxes is not None:
             for box in result.boxes:
-                # Koordinat
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
                 
-                # Nama Label
                 label_name = model.names[cls] if cls < len(model.names) else str(cls)
                 label = f"{label_name} {conf:.0%}"
                 
                 # Gambar Kotak
                 cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 
-                # Gambar Label Background
+                # Label Background
                 (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
                 
-                # Teks Label
-                cv2.putText(
-                    annotated_img, 
-                    label, 
-                    (x1, y1 - 5), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, 
-                    (255, 255, 255), 
-                    1
-                )
+                # Teks
+                cv2.putText(annotated_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         # ===============================
-        # 5. ENCODE JADI JPG
+        # 4. ENCODE JADI JPG
         # ===============================
         success, buffer = cv2.imencode(
-            ".jpg",
-            annotated_img,
+            ".jpg", 
+            annotated_img, 
             [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
         )
 
         if not success:
-            return None, "Encode output gagal"
+            return None, "Gagal encode hasil gambar"
 
-        # Format JSON Response
+        # Format JSON
         predictions = []
         if result.boxes is not None and len(result.boxes) > 0:
             best = max(result.boxes, key=lambda x: x.conf[0])
@@ -167,14 +144,15 @@ def process_image_v2(image_bytes):
         return base64.b64encode(buffer).decode("utf-8"), predictions
 
     except Exception as e:
-        print("🔥 REAL ERROR:", e)
+        print("🔥 REAL ERROR di Processing:", e)
         import traceback
         traceback.print_exc()
         return None, str(e)
-
     finally:
+        # Cleanup variable
+        del annotated_img
         gc.collect()
-
+        
 # --- DATA INFORMASI LENGKAP ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
@@ -308,13 +286,18 @@ def predict():
     if file.filename == '':
         return jsonify({'success': False, 'error': 'Nama file kosong'})
     
-    if file and allowed_file(file.filename):
-        try:
-            file.seek(0)
-            image_bytes = file.read()
+    filepath = None
+    try:
+        if file and allowed_file(file.filename):
+            # 1. BUAT NAMA FILE UNIK (Biar gak bentrok kalau ada multi-user)
+            filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            
+            # 2. SIMPAN KE DISK
+            file.save(filepath)
 
-            # Panggil fungsi Fix (Input PIL)
-            processed_image, predictions = process_image_v2(image_bytes)
+            # 3. PROSES PAKE PATH FILE (Safety Mode)
+            processed_image, predictions = process_image_file(filepath)
 
             if processed_image:
                 return jsonify({
@@ -324,13 +307,21 @@ def predict():
                 })
             else:
                 return jsonify({'success': False, 'error': predictions})
-                
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
-            return jsonify({'success': False, 'error': str(e)})
-    
-    return jsonify({'success': False, 'error': 'Format file invalid'})
+        
+        return jsonify({'success': False, 'error': 'Format file invalid'})
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
+
+    finally:
+        # 4. WAJIB: HAPUS FILE SETELAH SELESAI
+        if filepath and os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except Exception as e:
+                print(f"Gagal hapus file temp: {e}")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
