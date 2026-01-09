@@ -1,9 +1,10 @@
 Flask==3.0.0
 gunicorn==20.1.0
 numpy<2.0.0
-# OpenCV Headless
+# OpenCV headless wajib
 opencv-python-headless
-ultralytics>=8.2.0
+ultralytics>=8.3.0
+# Torch CPU versi baru
 torch==2.2.2
 torchvision==0.17.2
 Pillow>=10.0.0
