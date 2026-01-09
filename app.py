@@ -70,34 +70,31 @@ def process_image_v2(image_bytes):
         # ===============================
         # 1. LOAD IMAGE
         # ===============================
-        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        # === LOAD IMAGE VIA OPENCV (ANTI ERROR, FINAL) ===
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img_bgr is None:
+            raise ValueError("Gagal decode image")
+        
+        # DEBUG (boleh hapus nanti)
+        print("IMG TYPE:", type(img_bgr))
+        print("IMG DTYPE:", img_bgr.dtype)
+        print("IMG SHAPE:", img_bgr.shape)
+        
+        img_bgr = np.ascontiguousarray(img_bgr, dtype=np.uint8)
 
-        img_rgb = np.asarray(image)
-        
-        # === FIX WAJIB BUAT YOLO + OPENCV ===
-        if img_rgb.ndim != 3 or img_rgb.shape[2] != 3:
-            raise ValueError("Image harus HWC 3-channel")
-        
-        # RGB → BGR (WAJIB buat OpenCV & YOLO)
-        img_rgb = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
-        
-        # Paksa contiguous uint8
-        img_rgb = np.ascontiguousarray(img_rgb, dtype=np.uint8)
-
-        # DEBUG (boleh dihapus nanti)
-        print("IMG TYPE:", type(img_rgb))
-        print("IMG DTYPE:", img_rgb.dtype)
-        print("IMG SHAPE:", img_rgb.shape)
 
         # ===============================
         # 2. YOLO INFERENCE
         # ===============================
         results = model.predict(
-            source=img_rgb,
+            source=img_bgr,
             conf=0.25,
             device="cpu",
             verbose=False
         )
+
 
         result = results[0]
 
@@ -325,6 +322,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
