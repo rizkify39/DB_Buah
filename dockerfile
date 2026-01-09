@@ -40,6 +40,12 @@ RUN pip install --no-cache-dir --force-reinstall opencv-python-headless==4.8.0.7
 # Install dependency pendukung Ultralytics yang penting-penting aja
 RUN pip install --no-cache-dir matplotlib>=3.3.0 scipy>=1.4.1 tqdm>=4.64.0 pyyaml>=5.3.1 psutil py-cpuinfo thop pandas seaborn
 
+# ===============================
+# CACHE BUST (WAJIB UNTUK RAILWAY)
+# ===============================
+ARG CACHE_BUST=1
+RUN echo "Cache bust version: ${CACHE_BUST}"
+
 # Copy aplikasi terakhir (biar kalau ganti code doang, ga perlu install ulang library)
 COPY . .
 
