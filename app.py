@@ -6,12 +6,8 @@ import numpy as np
 import torch
 import uuid
 from flask import Flask, render_template, request, jsonify
-from werkzeug.utils import secure_filename
 from ultralytics import YOLO
-import numpy as np
-print("🔥 NUMPY VERSION:", np.__version__)
-assert np.__version__ == "1.26.4", f"NUMPY SALAH: {np.__version__}"
-
+from werkzeug.utils import secure_filename
 
 # --- KONFIGURASI ENVIRONMENT ---
 os.environ['OPENCV_DISABLE_GUI'] = '1'
@@ -23,146 +19,19 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'freshness_classifier_secret_key_2024')
 
 # --- KONFIGURASI UPLOAD ---
-# Pastikan folder ini ada dan bisa ditulis
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 8 * 1024 * 1024 
 
-# Buat folder jika belum ada
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 JPEG_QUALITY = 70
 
-# --- MODEL HANDLING ---
-_model = None
-_model_lock = False
-
-def get_model():
-    global _model, _model_lock
-    if _model is None and not _model_lock:
-        _model_lock = True
-        try:
-            if torch.cuda.is_available():
-                print("⚠️  GPU terdeteksi, tetapi memaksa CPU")
-            torch.set_num_threads(2)
-            
-            if os.path.exists('best.pt'):
-                _model = YOLO('best.pt')
-                _model.to('cpu')
-                print("✅ Model berhasil dimuat di CPU!")
-            else:
-                print("❌ File model 'best.pt' tidak ditemukan")
-        except Exception as e:
-            print(f"❌ Error loading model: {e}")
-        finally:
-            _model_lock = False
-    return _model
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def process_image_file(filepath):
-    """
-    Fungsi ini menerima PATH FILE (String), bukan bytes/stream.
-    Biarkan YOLO yang loading gambarnya sendiri.
-    """
-    model = get_model()
-    annotated_img = None
-
-    try:
-        # ===============================
-        # 1. YOLO INFERENCE (INPUT PATH FILE)
-        # ===============================
-        # Kita kasih path file langsung. YOLO sangat stabil kalau baca dari disk.
-        results = model.predict(
-            source=filepath,
-            conf=0.25,
-            device="cpu",
-            verbose=False,
-            imgsz=640
-        )
-
-
-        result = results[0]
-
-        # ===============================
-        # 2. AMBIL GAMBAR DARI HASIL YOLO
-        # ===============================
-        # result.orig_img adalah numpy array yang SUDAH DILOAD oleh YOLO.
-        # Kita pakai ini buat digambar. Gak perlu cv2.imread lagi.
-        annotated_img = result.orig_img.copy()
-
-        # Pastikan contiguous array (Wajib buat OpenCV)
-        annotated_img = np.ascontiguousarray(annotated_img)
-
-        # ===============================
-        # 3. GAMBAR KOTAK (VISUALISASI)
-        # ===============================
-        if result.boxes is not None:
-            for box in result.boxes:
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                conf = float(box.conf[0])
-                cls = int(box.cls[0])
-                
-                label_name = model.names[cls] if cls < len(model.names) else str(cls)
-                label = f"{label_name} {conf:.0%}"
-                
-                # Gambar Kotak
-                cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                
-                # Label Background
-                (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
-                
-                # Teks
-                cv2.putText(annotated_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
-        # ===============================
-        # 4. ENCODE JADI JPG
-        # ===============================
-        success, buffer = cv2.imencode(
-            ".jpg", 
-            annotated_img, 
-            [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
-        )
-
-        if not success:
-            return None, "Gagal encode hasil gambar"
-
-        # Format JSON
-        predictions = []
-        if result.boxes is not None and len(result.boxes) > 0:
-            best = max(result.boxes, key=lambda x: x.conf[0])
-            cls_idx = int(best.cls[0])
-            predictions.append({
-                "class": model.names[cls_idx] if cls_idx < len(model.names) else "Unknown",
-                "confidence": round(float(best.conf[0]) * 100, 2),
-                "bbox": []
-            })
-        else:
-            predictions.append({
-                "class": "Tidak Terdeteksi",
-                "confidence": 0,
-                "bbox": []
-            })
-
-        return base64.b64encode(buffer).decode("utf-8"), predictions
-
-    except Exception as e:
-        print("🔥 REAL ERROR di Processing:", e)
-        import traceback
-        traceback.print_exc()
-        return None, str(e)
-    finally:
-        # Cleanup variable
-        del annotated_img
-        gc.collect()
-        
-# --- DATA INFORMASI LENGKAP ---
+# --- DATABASE INFORMASI BUAH (INDONESIA) ---
+# Saya pindahkan ke atas biar rapi dan mudah diakses fungsi translation
 FRESHNESS_INFO = {
     'Fresh Apple': {
-        'name': 'Apel Segar',
+        'name': 'Apel Segar', # <- Kita akan ambil value ini
         'icon': '🍎',
         'description': 'Apel dalam kondisi segar dengan kulit mengkilap dan tekstur keras',
         'characteristics': ['Kulit berwarna cerah dan mengkilap', 'Tekstur keras saat ditekan', 'Aroma segar dan manis', 'Tangkai masih menempel kuat', 'Tidak ada bercak atau memar'],
@@ -260,6 +129,116 @@ FRESHNESS_ORDER = [
     'Fresh Capsicum', 'Stale Capsicum', 'Fresh Bitter Gourd', 'Stale Bitter Gourd'
 ]
 
+# --- MODEL HANDLING ---
+_model = None
+_model_lock = False
+
+def get_model():
+    global _model, _model_lock
+    if _model is None and not _model_lock:
+        _model_lock = True
+        try:
+            if torch.cuda.is_available():
+                print("⚠️  GPU terdeteksi, tetapi memaksa CPU")
+            torch.set_num_threads(2)
+            
+            if os.path.exists('best.pt'):
+                _model = YOLO('best.pt')
+                _model.to('cpu')
+                print("✅ Model berhasil dimuat di CPU!")
+            else:
+                print("❌ File model 'best.pt' tidak ditemukan")
+        except Exception as e:
+            print(f"❌ Error loading model: {e}")
+        finally:
+            _model_lock = False
+    return _model
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def process_image_file(filepath):
+    """
+    Fungsi ini:
+    1. Membaca file dari disk (Anti Error Memory)
+    2. Melakukan prediksi
+    3. Mengembalikan gambar BERSIH (Tanpa kotak)
+    4. Mengembalikan label dalam BAHASA INDONESIA
+    """
+    model = get_model()
+    annotated_img = None
+
+    try:
+        # 1. YOLO INFERENCE
+        results = model.predict(
+            source=filepath, 
+            conf=0.25,
+            device="cpu",
+            verbose=False,
+            imgsz=640
+        )
+
+        result = results[0]
+
+        # 2. AMBIL GAMBAR ASLI YANG BERSIH
+        # Kita tidak akan menggambar cv2.rectangle di sini.
+        # Jadi gambar tetap "Polos" seperti permintaan user.
+        annotated_img = result.orig_img.copy()
+
+        # Pastikan contiguous array (Wajib buat OpenCV encoding)
+        annotated_img = np.ascontiguousarray(annotated_img)
+
+        # 3. ENCODE JADI JPG (Gambar Bersih)
+        success, buffer = cv2.imencode(
+            ".jpg", 
+            annotated_img, 
+            [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY]
+        )
+
+        if not success:
+            return None, "Gagal encode hasil gambar"
+
+        # 4. SIAPKAN PREDIKSI (DENGAN TERJEMAHAN INDONESIA)
+        predictions = []
+        
+        # Kita ambil prediksi terbaik (Highest Confidence)
+        if result.boxes is not None and len(result.boxes) > 0:
+            best = max(result.boxes, key=lambda x: x.conf[0])
+            cls_idx = int(best.cls[0])
+            english_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
+            
+            # --- LOGIKA TERJEMAHAN ---
+            # Cari nama Inggris di dictionary FRESHNESS_INFO, ambil field 'name' (Indo)
+            # Jika tidak ketemu, fallback pakai nama Inggrisnya.
+            indo_name = english_name 
+            if english_name in FRESHNESS_INFO:
+                indo_name = FRESHNESS_INFO[english_name]['name']
+
+            predictions.append({
+                "class": indo_name,  # <--- SEKARANG PAKAI BAHASA INDONESIA
+                "confidence": round(float(best.conf[0]) * 100, 2),
+                "bbox": [] # Kosong karena tidak ada kotak visual
+            })
+        else:
+            predictions.append({
+                "class": "Tidak Terdeteksi",
+                "confidence": 0,
+                "bbox": []
+            })
+
+        return base64.b64encode(buffer).decode("utf-8"), predictions
+
+    except Exception as e:
+        print("🔥 REAL ERROR di Processing:", e)
+        import traceback
+        traceback.print_exc()
+        return None, str(e)
+    finally:
+        del annotated_img
+        gc.collect()
+
+# --- ROUTES ---
+
 @app.route('/')
 def index():
     model = get_model()
@@ -272,6 +251,7 @@ def classification():
 
 @app.route('/information')
 def information():
+    # Mengirim data info agar bisa dirender di halaman info
     ordered_info = {key: FRESHNESS_INFO[key] for key in FRESHNESS_ORDER}
     return render_template('information.html', freshness_info=ordered_info)
 
@@ -295,14 +275,14 @@ def predict():
     filepath = None
     try:
         if file and allowed_file(file.filename):
-            # 1. BUAT NAMA FILE UNIK (Biar gak bentrok kalau ada multi-user)
+            # Generate nama file unik
             filename = f"{uuid.uuid4().hex}_{secure_filename(file.filename)}"
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             
-            # 2. SIMPAN KE DISK
+            # Simpan fisik
             file.save(filepath)
 
-            # 3. PROSES PAKE PATH FILE (Safety Mode)
+            # Proses
             processed_image, predictions = process_image_file(filepath)
 
             if processed_image:
@@ -322,7 +302,7 @@ def predict():
         return jsonify({'success': False, 'error': str(e)})
 
     finally:
-        # 4. WAJIB: HAPUS FILE SETELAH SELESAI
+        # Hapus file sampah
         if filepath and os.path.exists(filepath):
             try:
                 os.remove(filepath)
@@ -332,6 +312,3 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
-
-
