@@ -280,7 +280,7 @@ def predict():
             # 1. Baca sebagai bytearray (mutable), lalu ubah ke Numpy Array
             # Ini lebih aman daripada np.frombuffer untuk file upload
             image_bytes = file.read()
-            processed_image, predictions = process_image_v2(image_bytes)
+            processed_image, predictions = processed_image_v2(image_bytes)
             
             if processed_image_v2:
                 return jsonify({
@@ -302,4 +302,5 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
