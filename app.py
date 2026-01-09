@@ -73,8 +73,15 @@ def process_image_v2(image_bytes):
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         img_rgb = np.asarray(image)
-
-        # 🔥 FIX KRITIS (INI YANG BELUM LO LAKUIN)
+        
+        # === FIX WAJIB BUAT YOLO + OPENCV ===
+        if img_rgb.ndim != 3 or img_rgb.shape[2] != 3:
+            raise ValueError("Image harus HWC 3-channel")
+        
+        # RGB → BGR (WAJIB buat OpenCV & YOLO)
+        img_rgb = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2BGR)
+        
+        # Paksa contiguous uint8
         img_rgb = np.ascontiguousarray(img_rgb, dtype=np.uint8)
 
         # DEBUG (boleh dihapus nanti)
@@ -85,8 +92,8 @@ def process_image_v2(image_bytes):
         # ===============================
         # 2. YOLO INFERENCE
         # ===============================
-        results = model(
-            img_rgb,
+        results = model.predict(
+            source=img_rgb,
             conf=0.25,
             device="cpu",
             verbose=False
@@ -318,6 +325,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
