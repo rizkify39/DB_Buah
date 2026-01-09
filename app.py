@@ -88,7 +88,6 @@ def process_image_v2(image_bytes):
         results = model(
             img_rgb,
             conf=0.25,
-            imgsz=640,
             device="cpu",
             verbose=False
         )
@@ -319,6 +318,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
