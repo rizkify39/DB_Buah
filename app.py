@@ -60,45 +60,18 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def process_image(file_bytes):
-    """
-    Versi Debugging Lengkap
-    """
+def process_image(numpy_array_input):
     model = get_model()
-    if model is None:
-        return None, "Model error"
-    
-    # Init variabel biar aman di finally
-    img_bgr = None
-    tensor_img = None
-    canvas = None
     
     try:
-        # --- DEBUGGING LANGKAH 1 ---
-        print(f"DEBUG: Tipe data input: {type(file_bytes)}")
-        
-        # Pastikan input adalah bytes
-        if not isinstance(file_bytes, (bytes, bytearray)):
-            return None, f"Input harus bytes, yang diterima: {type(file_bytes)}"
-
-        # --- LANGKAH 2: Konversi ke Numpy ---
-        np_arr = np.frombuffer(file_bytes, np.uint8)
-        print(f"DEBUG: Shape Numpy Array: {np_arr.shape}")
-        
-        if np_arr.size == 0:
-            return None, "Array numpy kosong (Gagal convert dari bytes)"
-
-        # --- LANGKAH 3: Decode OpenCV ---
-        # Ini adalah baris yang sebelumnya error. 
-        # Sekarang kita pastikan 'np_arr' sudah valid.
-        img_bgr = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        # --- LANGKAH DECODE ---
+        # Input sudah pasti numpy array dari route, jadi langsung decode
+        img_bgr = cv2.imdecode(numpy_array_input, cv2.IMREAD_COLOR)
         
         if img_bgr is None:
             return None, "OpenCV gagal decode (File bukan gambar valid)"
-            
-        print(f"DEBUG: Gambar berhasil di-load. Ukuran: {img_bgr.shape}")
 
-        # --- PROSES RESIZING (LETTERBOX) ---
+        # --- PROSES RESIZE & PREDIKSI (Sama seperti sebelumnya) ---
         target_size = 640
         h, w = img_bgr.shape[:2]
         scale = min(target_size / h, target_size / w)
@@ -111,7 +84,6 @@ def process_image(file_bytes):
         dh = (target_size - new_h) // 2
         canvas[dh:dh+new_h, dw:dw+new_w] = img_resized
 
-        # --- PROSES INFERENCE ---
         img_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
         tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
         tensor_img /= 255.0
@@ -120,7 +92,6 @@ def process_image(file_bytes):
         results = model(tensor_img, conf=0.25, verbose=False)
         result = results[0]
         
-        # --- VISUALISASI ---
         annotated_img = img_bgr.copy() 
         predictions = []
 
@@ -130,7 +101,6 @@ def process_image(file_bytes):
             conf = float(best_box.conf[0])
             class_name = model.names[class_id]
             
-            # Draw
             label_text = f"{class_name} ({conf:.0%})"
             cv2.rectangle(annotated_img, (0, 0), (300, 60), (0, 0, 0), -1)
             cv2.putText(annotated_img, label_text, (15, 40), 
@@ -148,7 +118,6 @@ def process_image(file_bytes):
                 'bbox': []
             })
 
-        # Encode Output
         success, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
         if not success:
             return None, "Gagal encode hasil gambar"
@@ -156,15 +125,10 @@ def process_image(file_bytes):
         return base64.b64encode(buffer).decode('utf-8'), predictions
 
     except Exception as e:
-        print(f"CRITICAL ERROR di process_image: {e}")
-        import traceback
-        traceback.print_exc() # Ini akan print detail error di log Railway
-        return None, f"System Error: {str(e)}"
-        
+        print(f"Error di process_image: {e}")
+        return None, f"Error visualisasi: {str(e)}"
+    
     finally:
-        # Cleanup memory manual
-        if 'tensor_img' in locals(): del tensor_img
-        if 'canvas' in locals(): del canvas
         gc.collect()
         
 # --- DATA INFORMASI (Tetap Sama) ---
@@ -302,21 +266,19 @@ def predict():
     
     if file and allowed_file(file.filename):
         try:
-            # --- PERBAIKAN KRUSIAL DISINI ---
-            # 1. Reset pointer ke awal (jaga-jaga kalau file sudah terbaca sebelumnya)
-            file.seek(0)
+            # --- CARA BACA FILE PALING AMAN (ANTI ERROR) ---
+            file.seek(0) # Reset pointer
             
-            # 2. Baca menjadi bytes
-            file_bytes = file.read()
+            # 1. Baca sebagai bytearray (mutable), lalu ubah ke Numpy Array
+            # Ini lebih aman daripada np.frombuffer untuk file upload
+            in_memory_file = np.asarray(bytearray(file.read()), dtype=np.uint8)
             
-            # 3. Cek panjang data (Debugging)
-            print(f"DEBUG: Ukuran file yang dibaca: {len(file_bytes)} bytes")
-            
-            if len(file_bytes) == 0:
-                return jsonify({'success': False, 'error': 'File terbaca 0 bytes (Kosong)'})
+            # 2. Cek apakah array valid
+            if in_memory_file.size == 0:
+                 return jsonify({'success': False, 'error': 'File terbaca 0 bytes (Kosong/Corrupt)'})
 
-            # 4. Kirim bytes ke fungsi process
-            processed_image, predictions = process_image(file_bytes)
+            # 3. Kirim ARRAY (bukan bytes) ke fungsi pemroses
+            processed_image, predictions = process_image(in_memory_file)
             
             if processed_image:
                 return jsonify({
@@ -328,7 +290,9 @@ def predict():
                 return jsonify({'success': False, 'error': predictions})
                 
         except Exception as e:
-            print(f"ERROR di Route: {e}")
+            print(f"ERROR SYSTEM: {e}")
+            import traceback
+            traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)})
     
     return jsonify({'success': False, 'error': 'Format file invalid'})
@@ -336,6 +300,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
