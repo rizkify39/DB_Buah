@@ -74,22 +74,26 @@ def process_image_v2(image_bytes):
         img_pil = Image.open(image_stream)
         img_pil = img_pil.convert("RGB")
         
-        # Pastikan jadi array uint8 (standar gambar)
-        img_np = np.array(img_pil, dtype=np.uint8)
+        # Convert ke Numpy
+        img_np = np.array(img_pil)
 
         # ===============================
-        # 2. CONVERT RGB -> BGR (SOLUSI ANTI ERROR)
+        # 2. FIX MEMORY LAYOUT (INI KUNCINYA!)
         # ===============================
-        # JANGAN PAKE: img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-        # OpenCV di servermu lagi 'buta' sama tipe data numpy.
-        # Kita pake slicing manual aja. Ini 100% pure numpy, ga akan error opencv.
+        # Kita convert RGB ke BGR manual pake slicing
+        img_bgr_view = img_np[:, :, ::-1]
         
-        # [:, :, ::-1] artinya: Ambil semua baris, semua kolom, tapi channel warna dibalik (RGB jadi BGR)
-        img_bgr = img_np[:, :, ::-1].copy() 
+        # 🔥 WAJIB: Paksa jadi contiguous array. 
+        # Tanpa ini, OpenCV di dalam YOLO bakal crash karena memorinya ga urut.
+        img_bgr = np.ascontiguousarray(img_bgr_view)
+
+        # DEBUG: Cek tipe data sebelum masuk YOLO (Biar lu tau ini sukses)
+        print(f"DEBUG INPUT YOLO -> Shape: {img_bgr.shape}, Dtype: {img_bgr.dtype}, Contiguous: {img_bgr.flags['C_CONTIGUOUS']}")
 
         # ===============================
         # 3. YOLO INFERENCE
         # ===============================
+        # Sekarang kita kirim array yang udah 'sehat' secara memori
         results = model.predict(
             source=img_bgr,
             conf=0.25,
@@ -98,10 +102,12 @@ def process_image_v2(image_bytes):
         )
 
         result = results[0]
+        
+        # Kita pake img_bgr untuk drawing, pastikan copy biar aman
         annotated_img = img_bgr.copy()
 
         # ===============================
-        # 4. GAMBAR KOTAK (VISUALISASI)
+        # 4. GAMBAR KOTAK
         # ===============================
         if result.boxes is not None:
             for box in result.boxes:
@@ -112,27 +118,15 @@ def process_image_v2(image_bytes):
                 label_name = model.names[cls] if cls < len(model.names) else str(cls)
                 label = f"{label_name} {conf:.0%}"
                 
-                # Gambar manual
                 cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                
                 (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
-                
-                cv2.putText(
-                    annotated_img,
-                    label,
-                    (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5,
-                    (255, 255, 255),
-                    1
-                )
+                cv2.putText(annotated_img, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         # ===============================
         # 5. ENCODE OUTPUT
         # ===============================
-        # Pastikan array contiguous di memori sebelum masuk cv2.imencode
-        # Ini mencegah error 'buf' yang tadi muncul
+        # Sekali lagi, pastikan contiguous sebelum masuk cv2.imencode
         annotated_img = np.ascontiguousarray(annotated_img)
         
         success, buffer = cv2.imencode(
@@ -331,6 +325,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
