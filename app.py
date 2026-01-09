@@ -61,6 +61,11 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def process_image(image_path):
+    """
+    PERBAIKAN V5: LETTERBOX RESIZE & LOWER THRESHOLD.
+    1. Menggunakan 'Letterbox' agar gambar tidak gepeng/distorsi.
+    2. Menurunkan threshold confidence agar pisang hitam terdeteksi.
+    """
     model = get_model()
     if model is None:
         return None, "Model tidak tersedia"
@@ -70,76 +75,85 @@ def process_image(image_path):
     results = None
     
     try:
-        # 1. Load Manual dengan OpenCV
+        # 1. Load Gambar
         img_bgr = cv2.imread(image_path)
         if img_bgr is None:
-            raise ValueError("Gagal membaca gambar dengan OpenCV")
+            raise ValueError("Gagal membaca gambar")
 
-        # 2. Resize Manual (Tetap diperlukan untuk performa)
-        h, w = img_bgr.shape[:2]
-        r = min(MAX_IMAGE_SIZE / h, MAX_IMAGE_SIZE / w)
-        new_h, new_w = int(h * r), int(w * r)
-        new_h = (new_h // 32) * 32
-        new_w = (new_w // 32) * 32
-        new_h, new_w = max(32, new_h), max(32, new_w)
+        # --- TEKNIK LETTERBOX (PENTING AGAR TIDAK GEPENG) ---
+        # Kita ingin resize ke MAX_IMAGE_SIZE tapi mempertahankan aspek rasio
+        target_size = 640  # YOLO standard training size (biasanya 640)
         
+        h, w = img_bgr.shape[:2]
+        scale = min(target_size / h, target_size / w)
+        new_w, new_h = int(w * scale), int(h * scale)
+        
+        # Resize gambar asli
         img_resized = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+        
+        # Buat Canvas kotak (Square) berwarna abu-abu (114)
+        # Ini standar YOLO biar model ga bingung
+        canvas = np.full((target_size, target_size, 3), 114, dtype=np.uint8)
+        
+        # Tempel gambar yang sudah di-resize ke tengah canvas
+        dw = (target_size - new_w) // 2
+        dh = (target_size - new_h) // 2
+        canvas[dh:dh+new_h, dw:dw+new_w] = img_resized
 
-        # 3. Konversi ke Tensor
-        img_rgb = cv2.cvtColor(img_resized, cv2.COLOR_BGR2RGB)
+        # 2. Konversi ke Tensor (Manual Bypass Numpy Error)
+        img_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
         tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
-        tensor_img /= 255.0
-        tensor_img = tensor_img.permute(2, 0, 1)
-        tensor_img = tensor_img.unsqueeze(0)
+        tensor_img /= 255.0  # Normalize 0-1
+        tensor_img = tensor_img.permute(2, 0, 1) # HWC -> CHW
+        tensor_img = tensor_img.unsqueeze(0)     # Batch dim
 
-        # 4. Prediksi (Tambahkan threshold confidence biar tembok ga masuk)
-        # conf=0.40 artinya abaikan deteksi di bawah 40%
-        results = model(tensor_img, conf=0.40, verbose=False)
+        # 3. Prediksi
+        # Turunkan conf ke 0.25 (Standar YOLO) biar yang agak ragu tetap masuk dulu
+        results = model(tensor_img, conf=0.25, verbose=False)
         result = results[0]
         
-        annotated_img = img_resized.copy()
+        # Siapkan gambar output (pakai gambar asli, bukan canvas letterbox biar cantik di web)
+        annotated_img = img_bgr.copy() 
         predictions = []
 
-        # 5. LOGIKA BARU: Cari 1 Confidence Tertinggi
+        # 4. Ambil Prediksi Terbaik
         if result.boxes is not None and len(result.boxes) > 0:
-            # Cari box dengan nilai conf paling besar
             best_box = max(result.boxes, key=lambda x: x.conf[0])
             
-            # Ambil Info
             class_id = int(best_box.cls[0])
             conf = float(best_box.conf[0])
             class_name = model.names[class_id]
             label_text = f"{class_name} ({conf:.0%})"
             
-            # --- VISUALISASI BERSIH (TANPA KOTAK) ---
-            # Kita tulis nama buahnya di pojok kiri atas gambar saja
-            # Warna background teks (Hitam transparan)
-            cv2.rectangle(annotated_img, (0, 0), (250, 40), (0, 0, 0), -1)
-            # Tulis Teks Putih
-            cv2.putText(annotated_img, label_text, (10, 30), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            # --- Visualisasi Label di Pojok Kiri Atas ---
+            # Kotak background hitam transparan
+            overlay = annotated_img.copy()
+            cv2.rectangle(overlay, (0, 0), (300, 60), (0, 0, 0), -1)
+            alpha = 0.6
+            cv2.addWeighted(overlay, alpha, annotated_img, 1 - alpha, 0, annotated_img)
             
-            # Masukkan ke data JSON untuk ditampilkan di web
+            # Teks
+            cv2.putText(annotated_img, label_text, (15, 40), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+            
             predictions.append({
                 'class': class_name,
                 'confidence': round(conf * 100, 2),
-                'bbox': [] # Kosongkan bbox karena kita tidak pakai kotak
+                'bbox': []
             })
         else:
-            # Jika tidak ada yang terdeteksi (atau di bawah threshold)
             predictions.append({
                 'class': 'Tidak Terdeteksi',
                 'confidence': 0,
                 'bbox': []
             })
 
-        # 6. Encode Hasil ke JPEG Base64
+        # 5. Encode Hasil
         success, buffer = cv2.imencode('.jpg', annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         if not success:
             raise ValueError("Gagal encode output image")
 
         img_str = base64.b64encode(buffer).decode('utf-8')
-        
         return img_str, predictions
     
     except Exception as e:
@@ -150,10 +164,9 @@ def process_image(image_path):
     
     finally:
         if 'tensor_img' in locals(): del tensor_img
-        if 'img_bgr' in locals(): del img_bgr
-        if 'results' in locals(): del results
+        if 'canvas' in locals(): del canvas
         gc.collect()
-
+        
 # --- DATA INFORMASI (Tetap Sama) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
@@ -319,5 +332,6 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
