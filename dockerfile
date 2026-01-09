@@ -1,5 +1,6 @@
 FROM python:3.10-slim
 
+# Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     OPENCV_DISABLE_GUI=1 \
@@ -8,37 +9,29 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps OpenCV
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements file
 COPY requirements.txt .
 
-RUN pip install --upgrade pip
+# Install dependencies dengan urutan yang BENAR untuk menghindari konflik
+RUN pip install --upgrade pip && \
+    # 1. Install Numpy DULUAN versi 1.26.4 (Wajib < 2.0)
+    pip install "numpy==1.26.4" && \
+    # 2. Install Torch CPU secara eksplisit agar tidak download versi GPU yang besar
+    pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cpu && \
+    # 3. Install sisanya, TAPI jangan upgrade numpy lagi (--no-deps untuk ultralytics sementara)
+    pip install -r requirements.txt
 
-# 🔥 Torch CPU (PIN KERAS)
-RUN pip install --no-cache-dir \
-    torch==2.0.1+cpu \
-    torchvision==0.15.2+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
-
-# 🔒 NUMPY HARUS SEBELUM ULTRALYTICS
-RUN pip install --no-cache-dir numpy==1.26.4
-
-# 🔥 ULTRALYTICS TANPA DEPENDENCIES
-RUN pip install --no-cache-dir --no-deps ultralytics==8.0.196
-
-# Install dependency app (Flask, matplotlib, dll)
-RUN pip install --no-cache-dir -r requirements.txt
-
-# 🔨 PAKSA NUMPY SEKALI LAGI (ANTI DITIMPA)
-RUN pip uninstall -y numpy || true && \
-    pip install --no-cache-dir numpy==1.26.4
-
+# Copy source code
 COPY . .
 
+# Expose port
 EXPOSE 8080
 
+# Run command
 CMD ["gunicorn", "--workers", "1", "--threads", "2", "--timeout", "120", "--bind", "0.0.0.0:8080", "app:app"]
