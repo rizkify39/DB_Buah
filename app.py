@@ -68,25 +68,27 @@ def process_image_v2(image_bytes):
 
     try:
         # ===============================
-        # 1. LOAD IMAGE PAKE PIL (BUKAN CV2.IMDECODE)
+        # 1. LOAD IMAGE PAKE PIL
         # ===============================
-        # Kita bungkus bytes jadi Stream biar bisa dibaca PIL
         image_stream = io.BytesIO(image_bytes)
-        
-        # Buka pake PIL (Jauh lebih stabil di Linux Server)
         img_pil = Image.open(image_stream)
-        
-        # Pastikan format RGB (handle kalo user upload PNG transparan/RGBA)
         img_pil = img_pil.convert("RGB")
         
-        # Convert ke Numpy Array
-        img_np = np.array(img_pil)
-        
-        # PIL itu RGB, OpenCV butuh BGR. Kita tukar warnanya.
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        # Pastikan jadi array uint8 (standar gambar)
+        img_np = np.array(img_pil, dtype=np.uint8)
 
         # ===============================
-        # 2. YOLO INFERENCE
+        # 2. CONVERT RGB -> BGR (SOLUSI ANTI ERROR)
+        # ===============================
+        # JANGAN PAKE: img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        # OpenCV di servermu lagi 'buta' sama tipe data numpy.
+        # Kita pake slicing manual aja. Ini 100% pure numpy, ga akan error opencv.
+        
+        # [:, :, ::-1] artinya: Ambil semua baris, semua kolom, tapi channel warna dibalik (RGB jadi BGR)
+        img_bgr = img_np[:, :, ::-1].copy() 
+
+        # ===============================
+        # 3. YOLO INFERENCE
         # ===============================
         results = model.predict(
             source=img_bgr,
@@ -96,33 +98,26 @@ def process_image_v2(image_bytes):
         )
 
         result = results[0]
-
-        # Ambil gambar asli dari hasil plot (atau copy dari img_bgr)
         annotated_img = img_bgr.copy()
 
-        # Gambar Kotak Manual (Lebih aman daripada result.plot() di headless server)
+        # ===============================
+        # 4. GAMBAR KOTAK (VISUALISASI)
+        # ===============================
         if result.boxes is not None:
             for box in result.boxes:
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
                 conf = float(box.conf[0])
                 cls = int(box.cls[0])
                 
-                # Cek index class biar ga out of bound
-                if cls < len(model.names):
-                    label_name = model.names[cls]
-                else:
-                    label_name = str(cls)
-                    
+                label_name = model.names[cls] if cls < len(model.names) else str(cls)
                 label = f"{label_name} {conf:.0%}"
                 
-                # Gambar Rectangle
+                # Gambar manual
                 cv2.rectangle(annotated_img, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 
-                # Gambar Label Background
                 (w, h), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(annotated_img, (x1, y1 - 20), (x1 + w, y1), (0, 255, 0), -1)
                 
-                # Tulisan
                 cv2.putText(
                     annotated_img,
                     label,
@@ -133,7 +128,13 @@ def process_image_v2(image_bytes):
                     1
                 )
         
-        # Encode balik ke JPG buat dikirim ke Web
+        # ===============================
+        # 5. ENCODE OUTPUT
+        # ===============================
+        # Pastikan array contiguous di memori sebelum masuk cv2.imencode
+        # Ini mencegah error 'buf' yang tadi muncul
+        annotated_img = np.ascontiguousarray(annotated_img)
+        
         success, buffer = cv2.imencode(
             ".jpg",
             annotated_img,
@@ -144,7 +145,6 @@ def process_image_v2(image_bytes):
             return None, "Encode output gagal"
 
         predictions = []
-
         if result.boxes is not None and len(result.boxes) > 0:
             best = max(result.boxes, key=lambda x: x.conf[0])
             cls_idx = int(best.cls[0])
@@ -170,7 +170,6 @@ def process_image_v2(image_bytes):
 
     finally:
         gc.collect()
-
         
 # --- DATA INFORMASI (Tetap Sama) ---
 FRESHNESS_INFO = {
@@ -332,6 +331,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
