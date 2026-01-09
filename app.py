@@ -1,5 +1,6 @@
 import os
 import gc
+import io
 import cv2
 import base64
 import numpy as np
@@ -7,6 +8,8 @@ import torch
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from ultralytics import YOLO
+from PIL import Image
+
 
 # --- KONFIGURASI ENVIRONMENT ---
 os.environ['OPENCV_DISABLE_GUI'] = '1'
@@ -65,7 +68,7 @@ def process_image(image_bytes):
 
     try:
         # ===============================
-        # 1. DECODE (PIL)
+        # 1. DECODE GAMBAR (PALING AMAN)
         # ===============================
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img_rgb = np.array(image)
@@ -74,7 +77,7 @@ def process_image(image_bytes):
             return None, "Gagal membaca gambar"
 
         # ===============================
-        # 2. YOLOv8 LANGSUNG TERIMA IMAGE
+        # 2. YOLOv8 INFERENCE
         # ===============================
         results = model(
             img_rgb,
@@ -85,7 +88,9 @@ def process_image(image_bytes):
         )
 
         result = results[0]
-        annotated_img = result.plot()  # BGR output (OpenCV-ready)
+
+        # YOLO sudah provide gambar dengan bounding box
+        annotated_img = result.plot()  # BGR (OpenCV compatible)
 
         predictions = []
 
@@ -108,7 +113,7 @@ def process_image(image_bytes):
             })
 
         # ===============================
-        # 3. ENCODE OUTPUT
+        # 3. ENCODE KE BASE64
         # ===============================
         success, buffer = cv2.imencode(
             ".jpg",
@@ -119,7 +124,9 @@ def process_image(image_bytes):
         if not success:
             return None, "Gagal encode gambar hasil"
 
-        return base64.b64encode(buffer).decode("utf-8"), predictions
+        encoded_img = base64.b64encode(buffer).decode("utf-8")
+
+        return encoded_img, predictions
 
     except Exception as e:
         print(f"ERROR process_image: {e}")
@@ -127,6 +134,7 @@ def process_image(image_bytes):
 
     finally:
         gc.collect()
+
         
 # --- DATA INFORMASI (Tetap Sama) ---
 FRESHNESS_INFO = {
@@ -291,6 +299,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
