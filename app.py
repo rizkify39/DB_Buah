@@ -27,7 +27,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 JPEG_QUALITY = 70
 
-# --- DATABASE INFORMASI LENGKAP ---
+# --- DATABASE INFORMASI LENGKAP (FULL VERSION) ---
 FRESHNESS_INFO = {
     'Fresh Apple': {
         'name': 'Apel Segar',
@@ -87,7 +87,7 @@ FRESHNESS_INFO = {
     'Stale Tomato': {
         'name': 'Tomat Tidak Segar',
         'icon': '🍅',
-        'description': 'Tomat yang sudah mulai membusuk',
+        'description': 'Tomat yang sudah lunak atau mulai membusuk',
         'characteristics': ['Kulit keriput atau lembek', 'Warna tidak merata atau ada bercak', 'Tekstur sangat lunak', 'Tangkai kering atau hitam', 'Aroma asam atau tidak sedap'],
         'warning': 'Hindari konsumsi jika sudah berjamur'
     },
@@ -141,17 +141,8 @@ def get_model():
                 print("⚠️  GPU terdeteksi, tetapi memaksa CPU")
             torch.set_num_threads(2)
             
-            model_path = 'best.pt'
-            if os.path.exists(model_path):
-                # --- CEK UKURAN FILE (DEBUG PENTING) ---
-                file_size_mb = os.path.getsize(model_path) / (1024 * 1024)
-                print(f"📊 [INFO] Ukuran File Model: {file_size_mb:.2f} MB")
-                
-                if file_size_mb < 1:
-                    print("⚠️ [BAHAYA] File model terlalu kecil! Kemungkinan ini cuma pointer Git LFS.")
-                    print("👉 Solusi: Upload ulang best.pt yang asli (ukuran biasanya > 10MB)")
-
-                _model = YOLO(model_path)
+            if os.path.exists('best.pt'):
+                _model = YOLO('best.pt')
                 _model.to('cpu')
                 print(f"✅ Model Loaded! Classes: {_model.names}")
             else:
@@ -173,88 +164,64 @@ def process_image_file(filepath):
     annotated_img = None
 
     try:
-        # --- DEBUG: LIHAT UKURAN GAMBAR ASLI ---
-        # Kita baca dulu pake OpenCV cuma buat cek resolusi (gak dipake buat prediksi)
-        temp_img = cv2.imread(filepath)
-        h, w = temp_img.shape[:2]
-        print(f"📷 [INFO] Ukuran Gambar Asli: {w}x{h}")
-
-        # ===============================
-        # 1. YOLO INFERENCE (TUNING MODE)
-        # ===============================
+        # 1. YOLO INFERENCE
+        # rect=True: Mencegah gambar potrait jadi gepeng (penting agar akurasi tetap tinggi)
+        # agnostic_nms=True: Mencegah deteksi ganda di area yang sama
         results = model.predict(
             source=filepath, 
-            # conf: Kalau masih 'kacau' banyak kotak salah, NAIKKAN jadi 0.4 atau 0.5
-            # Kalau 'tidak terdeteksi', TURUNKAN jadi 0.15
-            conf=0.25, 
-            
-            # iou: Semakin tinggi (misal 0.7), semakin tolerir sama kotak tumpang tindih
+            conf=0.20,      # Threshold moderat
             iou=0.5,
-            
             device="cpu",
-            
-            # imgsz: JANGAN DI-HARDCODE ke 640 kalau gambar lu gede2. 
-            # Kita set 640 sebagai base, tapi biarkan dia flexible.
-            # Atau hapus baris ini biar auto.
-            imgsz=640, 
-
-            # rect: PENTING! Biar gambar potrait gak dipenyet jadi kotak (bikin pisang jadi apel)
-            rect=True,
-
-            # agnostic_nms: Cegah deteksi double (misal 1 buah dideteksi jadi 'Fresh' DAN 'Stale')
-            agnostic_nms=True,
-            
+            rect=True,      
+            agnostic_nms=True, 
             verbose=True
         )
 
         result = results[0]
+
+        # 2. AMBIL GAMBAR BERSIH (TANPA KOTAK)
+        # Kita copy gambar asli tanpa menggambar rectangle apapun
+        annotated_img = result.orig_img.copy()
         
-        # DEBUG LOG
-        print(f"🔎 [DEBUG] Detections Found: {len(result.boxes)}")
-        
-        # 2. AMBIL GAMBAR HASIL (Visualisasi Bawaan YOLO dulu buat Cek)
-        # result.plot() akan menggambar kotak + label default YOLO.
-        # Kita pakai ini dulu untuk memastikan apakah modelnya "melihat" dengan benar.
-        # Nanti kalau sudah bener, baru kita custom gambar kotaknya lagi.
-        annotated_img = result.plot() # <-- Pake bawaan YOLO dulu biar yakin
-        
-        # Convert BGR (OpenCV) biar warna bener
-        # annotated_img = cv2.cvtColor(annotated_img, cv2.COLOR_RGB2BGR) # Kadang plot() outputnya RGB/BGR tergantung versi
-        # Biasanya result.plot() outputnya BGR (OpenCV format) jadi aman.
+        # Wajib contiguous array buat OpenCV encoding
+        annotated_img = np.ascontiguousarray(annotated_img)
 
         # 3. ENCODE JPG
         success, buffer = cv2.imencode(".jpg", annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         if not success:
             return None, "Gagal encode hasil gambar"
 
-        # 4. PREDIKSI (DATA JSON)
+        # 4. PILIH 1 PEMENANG (HIGHEST CONFIDENCE)
         predictions = []
         
         if result.boxes is not None and len(result.boxes) > 0:
-            # Ambil semua deteksi, bukan cuma yang terbaik
-            # Biar lu tau apa aja yang "kacau" itu
-            for box in result.boxes:
-                cls_idx = int(box.cls[0])
-                conf_score = float(box.conf[0])
-                
-                raw_model_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
-                
-                # Smart Match ke Indo
-                indo_name = raw_model_name
-                norm_model_name = normalize_string(raw_model_name)
-                for key, info in FRESHNESS_INFO.items():
-                    if normalize_string(key) == norm_model_name:
-                        indo_name = info['name']
-                        break
-                
-                predictions.append({
-                    "class": indo_name,
-                    "confidence": round(conf_score * 100, 2),
-                    "bbox": box.xyxy[0].tolist() # Koordinat kotak
-                })
-                
-            # Urutkan dari confidence tertinggi
-            predictions = sorted(predictions, key=lambda x: x['confidence'], reverse=True)
+            # Cari box dengan nilai confidence TERTINGGI
+            best_box = max(result.boxes, key=lambda x: x.conf[0])
+            
+            # Ambil datanya
+            cls_idx = int(best_box.cls[0])
+            conf_score = float(best_box.conf[0])
+            
+            # Nama dari model
+            raw_model_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
+            
+            # Smart Match ke Bahasa Indonesia (Database Info)
+            indo_name = raw_model_name 
+            norm_model_name = normalize_string(raw_model_name)
+            
+            found = False
+            for key, info in FRESHNESS_INFO.items():
+                if normalize_string(key) == norm_model_name:
+                    indo_name = info['name']
+                    found = True
+                    break
+            
+            # Masukkan HANYA 1 hasil ini ke list
+            predictions.append({
+                "class": indo_name,
+                "confidence": round(conf_score * 100, 2),
+                "bbox": [] # Kosong karena tidak digambar
+            })
             
         else:
             predictions.append({
@@ -280,14 +247,6 @@ def process_image_file(filepath):
 def index():
     model = get_model()
     return render_template('index.html', model_loaded=model is not None)
-
-@app.route('/debug_classes')
-def debug_classes():
-    model = get_model()
-    if model:
-        return jsonify({"status": "Model Loaded", "classes": model.names})
-    else:
-        return jsonify({"status": "Model Not Loaded"})
 
 @app.route('/classification')
 def classification():
@@ -344,4 +303,3 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
