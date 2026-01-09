@@ -18,7 +18,7 @@ COPY requirements.txt .
 
 RUN pip install --upgrade pip
 
-# 🔥 TORCH CPU (PIN)
+# 🔥 Torch CPU (PIN KERAS)
 RUN pip install --no-cache-dir \
     torch==2.0.1+cpu \
     torchvision==0.15.2+cpu \
@@ -30,7 +30,7 @@ RUN pip install --no-cache-dir numpy==1.26.4
 # 🔥 ULTRALYTICS TANPA DEPENDENCIES
 RUN pip install --no-cache-dir --no-deps ultralytics==8.0.196
 
-# Install sisa dependency
+# Install dependency app (Flask, matplotlib, dll)
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 🔨 PAKSA NUMPY SEKALI LAGI (ANTI DITIMPA)
