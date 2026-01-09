@@ -169,7 +169,7 @@ def process_image_file(filepath):
         # agnostic_nms=True: Mencegah deteksi ganda di area yang sama
         results = model.predict(
             source=filepath, 
-            conf=0.20,      # Threshold moderat
+            conf=0.45,
             iou=0.5,
             device="cpu",
             rect=True,      
@@ -303,3 +303,4 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
