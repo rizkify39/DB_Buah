@@ -68,22 +68,32 @@ def process_image_v2(image_bytes):
 
     try:
         # ===============================
-        # 1. LOAD IMAGE
+        # 0. PAKSA image_bytes = BYTES
         # ===============================
-        # === LOAD IMAGE VIA OPENCV (ANTI ERROR, FINAL) ===
-        nparr = np.frombuffer(image_bytes, np.uint8)
-        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
-        if img_bgr is None:
-            raise ValueError("Gagal decode image")
-        
-        # DEBUG (boleh hapus nanti)
-        print("IMG TYPE:", type(img_bgr))
-        print("IMG DTYPE:", img_bgr.dtype)
-        print("IMG SHAPE:", img_bgr.shape)
-        
-        img_bgr = np.ascontiguousarray(img_bgr, dtype=np.uint8)
+        if isinstance(image_bytes, str):
+            # kemungkinan base64
+            image_bytes = base64.b64decode(image_bytes)
 
+        if isinstance(image_bytes, memoryview):
+            image_bytes = image_bytes.tobytes()
+
+        if not isinstance(image_bytes, (bytes, bytearray)):
+            raise TypeError(f"image_bytes HARUS bytes, dapet: {type(image_bytes)}")
+
+        # ===============================
+        # 1. LOAD IMAGE (FINAL FIX)
+        # ===============================
+        nparr = np.frombuffer(image_bytes, dtype=np.uint8)
+
+        if nparr.size == 0:
+            raise ValueError("Buffer kosong")
+
+        img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img_bgr is None:
+            raise ValueError("cv2.imdecode gagal (format rusak / bukan image)")
+
+        img_bgr = np.ascontiguousarray(img_bgr, dtype=np.uint8)
 
         # ===============================
         # 2. YOLO INFERENCE
@@ -322,6 +332,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
