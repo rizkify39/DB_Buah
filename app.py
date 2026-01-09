@@ -22,25 +22,104 @@ app.secret_key = os.environ.get('SECRET_KEY', 'freshness_classifier_secret_key_2
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # Limit 16MB
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024 
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 JPEG_QUALITY = 70
 
-# --- DATABASE INFORMASI ---
+# --- DATABASE LENGKAP (RESTORED) ---
 FRESHNESS_INFO = {
-    'Fresh Apple': {'name': 'Apel Segar', 'icon': '🍎', 'description': 'Apel segar, kulit mengkilap.', 'characteristics': ['Kulit cerah', 'Keras'], 'storage_tips': ['Kulkas 0-4°C'], 'benefits': ['Vitamin C']},
-    'Stale Apple': {'name': 'Apel Busuk', 'icon': '🍎', 'description': 'Apel busuk atau layu.', 'characteristics': ['Kulit keriput', 'Lembek'], 'warning': 'Jangan dikonsumsi', 'disposal_tips': ['Kompos']},
-    'Fresh Banana': {'name': 'Pisang Segar', 'icon': '🍌', 'description': 'Pisang matang sempurna.', 'characteristics': ['Kuning cerah'], 'storage_tips': ['Suhu ruang'], 'benefits': ['Potasium']},
-    'Stale Banana': {'name': 'Pisang Busuk', 'icon': '🍌', 'description': 'Pisang terlalu matang/busuk.', 'characteristics': ['Hitam/Coklat', 'Lembek'], 'warning': 'Cek jamur', 'usage_tips': ['Banana bread']},
-    'Fresh Orange': {'name': 'Jeruk Segar', 'icon': '🍊', 'description': 'Jeruk segar.', 'characteristics': ['Oranye cerah'], 'storage_tips': ['Kulkas'], 'benefits': ['Vitamin C']},
-    'Stale Orange': {'name': 'Jeruk Busuk', 'icon': '🍊', 'description': 'Jeruk kering/busuk.', 'characteristics': ['Kering', 'Jamuran'], 'warning': 'Jangan dimakan'},
-    'Fresh Tomato': {'name': 'Tomat Segar', 'icon': '🍅', 'description': 'Tomat segar.', 'characteristics': ['Merah kencang'], 'storage_tips': ['Suhu ruang'], 'benefits': ['Likopen']},
-    'Stale Tomato': {'name': 'Tomat Busuk', 'icon': '🍅', 'description': 'Tomat lembek/busuk.', 'characteristics': ['Berair', 'Bau'], 'warning': 'Buang'},
-    'Fresh Capsicum': {'name': 'Paprika Segar', 'icon': '🫑', 'description': 'Paprika renyah.', 'characteristics': ['Mengkilap'], 'storage_tips': ['Kulkas'], 'benefits': ['Antioksidan']},
-    'Stale Capsicum': {'name': 'Paprika Busuk', 'icon': '🫑', 'description': 'Paprika layu.', 'characteristics': ['Keriput', 'Lunak']},
-    'Fresh Bitter Gourd': {'name': 'Pare Segar', 'icon': '🥒', 'description': 'Pare hijau segar.', 'characteristics': ['Hijau tua', 'Keras'], 'storage_tips': ['Kulkas'], 'benefits': ['Gula darah']},
-    'Stale Bitter Gourd': {'name': 'Pare Busuk', 'icon': '🥒', 'description': 'Pare menguning.', 'characteristics': ['Kuning', 'Lembek'], 'warning': 'Pahit tidak enak'}
+    'Fresh Apple': {
+        'name': 'Apel Segar',
+        'icon': '🍎',
+        'description': 'Apel dalam kondisi segar dengan kulit mengkilap dan tekstur keras',
+        'characteristics': ['Kulit berwarna cerah dan mengkilap', 'Tekstur keras saat ditekan', 'Aroma segar dan manis', 'Tangkai masih menempel kuat', 'Tidak ada bercak atau memar'],
+        'storage_tips': ['Simpan di kulkas pada suhu 0-4°C', 'Jauhkan dari buah lain yang menghasilkan etilen', 'Dapat bertahan 4-6 minggu dalam kulkas'],
+        'benefits': ['Kaya serat dan vitamin C', 'Baik untuk pencernaan', 'Membantu menjaga kesehatan jantung']
+    },
+    'Stale Apple': {
+        'name': 'Apel Tidak Segar',
+        'icon': '🍎',
+        'description': 'Apel yang sudah mulai membusuk atau tidak segar',
+        'characteristics': ['Kulit keriput dan kusam', 'Tekstur lembek saat ditekan', 'Ada bercak coklat atau hitam', 'Aroma asam atau fermentasi', 'Tangkai mudah lepas'],
+        'warning': 'Tidak disarankan untuk dikonsumsi',
+        'disposal_tips': ['Dapat dijadikan kompos', 'Jangan dikonsumsi jika sudah berjamur']
+    },
+    'Fresh Banana': {
+        'name': 'Pisang Segar',
+        'icon': '🍌',
+        'description': 'Pisang matang dengan kulit kuning dan bintik coklat sedikit',
+        'characteristics': ['Kulit kuning dengan sedikit bintik coklat', 'Tekstur padat tapi tidak keras', 'Aroma manis khas pisang', 'Bentuk melengkung sempurna', 'Tidak ada memar besar'],
+        'storage_tips': ['Simpan di suhu ruang', 'Jauhkan dari sinar matahari langsung', 'Jika terlalu matang, simpan di kulkas'],
+        'benefits': ['Sumber potassium yang baik', 'Kaya vitamin B6', 'Membantu mengatur tekanan darah']
+    },
+    'Stale Banana': {
+        'name': 'Pisang Tidak Segar',
+        'icon': '🍌',
+        'description': 'Pisang yang sudah terlalu matang atau mulai membusuk',
+        'characteristics': ['Kulit hampir seluruhnya coklat atau hitam', 'Tekstur sangat lembek', 'Aroma fermentasi kuat', 'Kulit mudah pecah', 'Daging buah berair berlebihan'],
+        'warning': 'Masih bisa digunakan untuk smoothie atau baking jika belum berjamur',
+        'usage_tips': ['Cocok untuk membuat banana bread', 'Dapat dibekukan untuk smoothie', 'Baik untuk masker wajah alami']
+    },
+    'Fresh Orange': {
+        'name': 'Jeruk Segar',
+        'icon': '🍊',
+        'description': 'Jeruk segar dengan kulit halus dan berat sesuai ukuran',
+        'characteristics': ['Kulit halus dan berpori halus', 'Berat sesuai dengan ukurannya', 'Warna orange cerah dan merata', 'Aroma segar khas jeruk', 'Kulit tidak terlalu keras atau terlalu lunak'],
+        'storage_tips': ['Simpan di suhu ruang yang sejuk', 'Dapat bertahan 1-2 minggu', 'Simpan di kulkas untuk penyimpanan lebih lama'],
+        'benefits': ['Sumber vitamin C tinggi', 'Meningkatkan imunitas', 'Baik untuk kesehatan kulit']
+    },
+    'Stale Orange': {
+        'name': 'Jeruk Tidak Segar',
+        'icon': '🍊',
+        'description': 'Jeruk yang sudah mulai mengering atau membusuk',
+        'characteristics': ['Kulit kering dan keriput', 'Terasa ringan untuk ukurannya', 'Warna kusam atau ada bercak', 'Aroma asam tidak sedap', 'Kulit mudah dikupas secara tidak normal'],
+        'warning': 'Kualitas nutrisi sudah menurun'
+    },
+    'Fresh Tomato': {
+        'name': 'Tomat Segar',
+        'icon': '🍅',
+        'description': 'Tomat segar dengan kulit halus dan warna merah merata',
+        'characteristics': ['Kulit halus dan mengkilap', 'Warna merah merata', 'Tekstur padat tapi tidak keras', 'Tangkai hijau dan segar', 'Aroma segar khas tomat'],
+        'storage_tips': ['Simpan di suhu ruang, jangan di kulkas', 'Jauhkan dari sinar matahari langsung', 'Jangan ditumpuk dengan buah lain'],
+        'benefits': ['Kaya likopen antioksidan', 'Sumber vitamin A dan C', 'Baik untuk kesehatan mata']
+    },
+    'Stale Tomato': {
+        'name': 'Tomat Tidak Segar',
+        'icon': '🍅',
+        'description': 'Tomat yang sudah lunak atau mulai membusuk',
+        'characteristics': ['Kulit keriput atau lembek', 'Warna tidak merata atau ada bercak', 'Tekstur sangat lunak', 'Tangkai kering atau hitam', 'Aroma asam atau tidak sedap'],
+        'warning': 'Hindari konsumsi jika sudah berjamur'
+    },
+    'Fresh Capsicum': {
+        'name': 'Paprika Segar',
+        'icon': '🫑',
+        'description': 'Paprika segar dengan kulit mengkilap dan tekstur renyah',
+        'characteristics': ['Kulit mengkilap dan halus', 'Warna cerah dan merata', 'Tekstur keras dan renyah', 'Tangkai hijau dan segar', 'Bentuk proporsional dan padat'],
+        'storage_tips': ['Simpan di kulkas dalam plastik berlubang', 'Dapat bertahan 1-2 minggu', 'Jangan dicuci sebelum disimpan'],
+        'benefits': ['Sumber vitamin C tinggi', 'Kaya antioksidan', 'Rendah kalori']
+    },
+    'Stale Capsicum': {
+        'name': 'Paprika Tidak Segar',
+        'icon': '🫑',
+        'description': 'Paprika yang sudah mulai layu atau membusuk',
+        'characteristics': ['Kulit kusam dan keriput', 'Tekstur lunak dan tidak renyah', 'Warna memudar atau ada bercak', 'Tangkai kering atau hitam', 'Aroma tidak segar']
+    },
+    'Fresh Bitter Gourd': {
+        'name': 'Pare Segar',
+        'icon': '🥒',
+        'description': 'Pare segar dengan kulit hijau cerah dan tekstur padat',
+        'characteristics': ['Kulit hijau cerah dan montok', 'Tekstur padat dan berair', 'Duri halus masih terlihat jelas', 'Bentuk lurus atau melengkung natural', 'Aroma khas pare segar'],
+        'storage_tips': ['Simpan di kulkas dalam wadah tertutup', 'Dapat bertahan 4-5 hari', 'Bungkus dengan plastik berlubang'],
+        'benefits': ['Baik untuk penderita diabetes', 'Membantu menurunkan gula darah', 'Kaya antioksidan']
+    },
+    'Stale Bitter Gourd': {
+        'name': 'Pare Tidak Segar',
+        'icon': '🥒',
+        'description': 'Pare yang sudah mulai menguning atau membusuk',
+        'characteristics': ['Kulit menguning atau ada bercak', 'Tekstur lunak dan keriput', 'Warna tidak merata', 'Aroma tidak sedap', 'Duri halus sudah tidak jelas'],
+        'warning': 'Rasa akan lebih pahit dan tekstur tidak enak'
+    }
 }
 
 FRESHNESS_ORDER = [
@@ -63,9 +142,9 @@ def get_model():
             torch.set_num_threads(2)
             
             if os.path.exists('best.pt'):
-                # Load model
-                _model = YOLO('best.pt') 
-                print("✅ Model berhasil dimuat!")
+                _model = YOLO('best.pt')
+                _model.to('cpu')
+                print("✅ Model berhasil dimuat di CPU!")
             else:
                 print("❌ File model 'best.pt' tidak ditemukan")
         except Exception as e:
@@ -83,59 +162,52 @@ def process_image_file(filepath):
 
     try:
         # 1. YOLO INFERENCE
-        # Gunakan imgsz=640 dan conf rendah untuk debugging
+        # conf=0.10: Ambang batas rendah agar 'stale' yang samar tetap terdeteksi
         results = model.predict(
             source=filepath, 
-            conf=0.15,          # <-- Lower threshold biar lebih sensitif
+            conf=0.10, 
             iou=0.45,
             device="cpu",
-            verbose=True,       # <-- Nyalakan verbose biar masuk log server
+            verbose=False,
             imgsz=640
         )
 
         result = results[0]
-        
-        # DEBUG LOGGING KE TERMINAL RAILWAY
-        print(f"🔎 [DEBUG] File: {filepath}")
-        print(f"🔎 [DEBUG] Boxes Detected: {len(result.boxes)}")
-        if len(result.boxes) > 0:
-            print(f"🔎 [DEBUG] Classes: {result.boxes.cls.tolist()}")
-            print(f"🔎 [DEBUG] Confs: {result.boxes.conf.tolist()}")
 
-        # 2. AMBIL GAMBAR BERSIH
+        # 2. AMBIL GAMBAR BERSIH (TANPA KOTAK)
         annotated_img = result.orig_img.copy()
         annotated_img = np.ascontiguousarray(annotated_img)
 
         # 3. ENCODE JPG
         success, buffer = cv2.imencode(".jpg", annotated_img, [int(cv2.IMWRITE_JPEG_QUALITY), JPEG_QUALITY])
         if not success:
-            return None, "Gagal encode gambar"
+            return None, "Gagal encode hasil gambar"
 
-        # 4. FORMAT OUTPUT
+        # 4. PREDIKSI DAN MAPPING KE INDONESIA
         predictions = []
         
         if result.boxes is not None and len(result.boxes) > 0:
-            # Ambil confidence tertinggi
+            # Ambil deteksi dengan confidence tertinggi
             best = max(result.boxes, key=lambda x: x.conf[0])
             cls_idx = int(best.cls[0])
             
-            # Mapping Nama
-            if 0 <= cls_idx < len(model.names):
-                english_name = model.names[cls_idx]
-            else:
-                english_name = "Unknown"
-
-            # Mapping ke Indo
-            indo_name = english_name
+            # Ambil nama Inggris dari model
+            english_name = model.names[cls_idx] if cls_idx < len(model.names) else "Unknown"
+            
+            # --- LOGIKA SMART MATCHING (CASE INSENSITIVE) ---
+            indo_name = english_name # Default kalau gak ketemu
+            
+            # 1. Coba match langsung
             if english_name in FRESHNESS_INFO:
                 indo_name = FRESHNESS_INFO[english_name]['name']
-            
-            # Fallback jika nama model tidak persis sama dengan key dict
-            # Misal model output "stale_apple" tapi dict "Stale Apple"
-            if english_name not in FRESHNESS_INFO:
-                # Coba cari yang mirip case-insensitive
+            else:
+                # 2. Coba match dengan normalisasi (hapus spasi/_ dan lowercase)
+                # Contoh: "Stale_Apple" -> "staleapple" cocok dengan "Stale Apple" -> "staleapple"
+                normalized_english = english_name.lower().replace("_", "").replace(" ", "")
+                
                 for key in FRESHNESS_INFO:
-                    if key.lower() == english_name.lower().replace("_", " "):
+                    normalized_key = key.lower().replace("_", "").replace(" ", "")
+                    if normalized_key == normalized_english:
                         indo_name = FRESHNESS_INFO[key]['name']
                         break
 
@@ -159,6 +231,7 @@ def process_image_file(filepath):
         traceback.print_exc()
         return None, str(e)
     finally:
+        del annotated_img
         gc.collect()
 
 # --- ROUTES ---
