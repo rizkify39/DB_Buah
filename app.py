@@ -68,7 +68,7 @@ def process_image(image_bytes):
 
     try:
         # ===============================
-        # 1. DECODE GAMBAR (PALING AMAN)
+        # 1. DECODE IMAGE (PIL)
         # ===============================
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         img_rgb = np.array(image)
@@ -77,7 +77,7 @@ def process_image(image_bytes):
             return None, "Gagal membaca gambar"
 
         # ===============================
-        # 2. YOLOv8 INFERENCE
+        # 2. YOLO INFERENCE
         # ===============================
         results = model(
             img_rgb,
@@ -89,9 +89,23 @@ def process_image(image_bytes):
 
         result = results[0]
 
-        # YOLO sudah provide gambar dengan bounding box
-        annotated_img = result.plot()  # BGR (OpenCV compatible)
+        # ===============================
+        # 3. AMBIL HASIL GAMBAR (PAKSA NUMPY)
+        # ===============================
+        plotted = result.plot()
 
+        # 🔥 FIX KRITIS
+        if isinstance(plotted, Image.Image):
+            annotated_img = np.array(plotted)
+        else:
+            annotated_img = plotted
+
+        if not isinstance(annotated_img, np.ndarray):
+            return None, "Output YOLO bukan numpy array"
+
+        # ===============================
+        # 4. PREDIKSI
+        # ===============================
         predictions = []
 
         if result.boxes is not None and len(result.boxes) > 0:
@@ -113,7 +127,7 @@ def process_image(image_bytes):
             })
 
         # ===============================
-        # 3. ENCODE KE BASE64
+        # 5. ENCODE JPEG
         # ===============================
         success, buffer = cv2.imencode(
             ".jpg",
@@ -122,18 +136,17 @@ def process_image(image_bytes):
         )
 
         if not success:
-            return None, "Gagal encode gambar hasil"
+            return None, "Gagal encode gambar"
 
-        encoded_img = base64.b64encode(buffer).decode("utf-8")
-
-        return encoded_img, predictions
+        return base64.b64encode(buffer).decode("utf-8"), predictions
 
     except Exception as e:
-        print(f"ERROR process_image: {e}")
+        print("ERROR process_image:", e)
         return None, str(e)
 
     finally:
         gc.collect()
+
 
         
 # --- DATA INFORMASI (Tetap Sama) ---
@@ -299,13 +312,3 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
-
-
-
-
-
-
-
-
-
-
