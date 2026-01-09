@@ -6,6 +6,7 @@ import numpy as np
 import torch
 import uuid
 from flask import Flask, render_template, request, jsonify
+from werkzeug.utils import secure_filename
 from ultralytics import YOLO
 
 # --- KONFIGURASI ENVIRONMENT ---
@@ -326,3 +327,4 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
