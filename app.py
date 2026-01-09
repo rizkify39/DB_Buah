@@ -95,13 +95,33 @@ def process_image_v2(image_bytes):
 
         result = results[0]
 
-        plotted = result.plot()
+        annotated_img = result.orig_img.copy()
 
-        if isinstance(plotted, Image.Image):
-            annotated_img = np.asarray(plotted)
-        else:
-            annotated_img = plotted
-
+        if result.boxes is not None:
+            for box in result.boxes:
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                conf = float(box.conf[0])
+                cls = int(box.cls[0])
+                label = f"{model.names[cls]} {conf:.2f}"
+        
+                cv2.rectangle(
+                    annotated_img,
+                    (x1, y1),
+                    (x2, y2),
+                    (0, 255, 0),
+                    2
+                )
+        
+                cv2.putText(
+                    annotated_img,
+                    label,
+                    (x1, max(y1 - 10, 10)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (0, 255, 0),
+                    2
+                )
+        
         annotated_img = np.ascontiguousarray(annotated_img, dtype=np.uint8)
 
         success, buffer = cv2.imencode(
@@ -299,6 +319,7 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
