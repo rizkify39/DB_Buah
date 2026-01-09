@@ -63,18 +63,24 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def process_image(image_bytes):
+def process_image_v2(image_bytes):
     model = get_model()
 
     try:
         # ===============================
-        # 1. DECODE IMAGE (PIL)
+        # 1. LOAD IMAGE
         # ===============================
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img_rgb = np.array(image)
 
-        if img_rgb is None or img_rgb.size == 0:
-            return None, "Gagal membaca gambar"
+        img_rgb = np.asarray(image)
+
+        # 🔥 FIX KRITIS (INI YANG BELUM LO LAKUIN)
+        img_rgb = np.ascontiguousarray(img_rgb, dtype=np.uint8)
+
+        # DEBUG (boleh dihapus nanti)
+        print("IMG TYPE:", type(img_rgb))
+        print("IMG DTYPE:", img_rgb.dtype)
+        print("IMG SHAPE:", img_rgb.shape)
 
         # ===============================
         # 2. YOLO INFERENCE
@@ -89,46 +95,15 @@ def process_image(image_bytes):
 
         result = results[0]
 
-        # ===============================
-        # 3. AMBIL HASIL GAMBAR (PAKSA NUMPY)
-        # ===============================
         plotted = result.plot()
 
-        # 🔥 FIX KRITIS
         if isinstance(plotted, Image.Image):
-            annotated_img = np.array(plotted)
+            annotated_img = np.asarray(plotted)
         else:
             annotated_img = plotted
 
-        if not isinstance(annotated_img, np.ndarray):
-            return None, "Output YOLO bukan numpy array"
+        annotated_img = np.ascontiguousarray(annotated_img, dtype=np.uint8)
 
-        # ===============================
-        # 4. PREDIKSI
-        # ===============================
-        predictions = []
-
-        if result.boxes is not None and len(result.boxes) > 0:
-            best_box = max(result.boxes, key=lambda x: x.conf[0])
-            class_id = int(best_box.cls[0])
-            conf = float(best_box.conf[0])
-            class_name = model.names[class_id]
-
-            predictions.append({
-                'class': class_name,
-                'confidence': round(conf * 100, 2),
-                'bbox': []
-            })
-        else:
-            predictions.append({
-                'class': 'Tidak Terdeteksi',
-                'confidence': 0,
-                'bbox': []
-            })
-
-        # ===============================
-        # 5. ENCODE JPEG
-        # ===============================
         success, buffer = cv2.imencode(
             ".jpg",
             annotated_img,
@@ -136,17 +111,32 @@ def process_image(image_bytes):
         )
 
         if not success:
-            return None, "Gagal encode gambar"
+            return None, "Encode gagal"
+
+        predictions = []
+
+        if result.boxes is not None and len(result.boxes) > 0:
+            best = max(result.boxes, key=lambda x: x.conf[0])
+            predictions.append({
+                "class": model.names[int(best.cls[0])],
+                "confidence": round(float(best.conf[0]) * 100, 2),
+                "bbox": []
+            })
+        else:
+            predictions.append({
+                "class": "Tidak Terdeteksi",
+                "confidence": 0,
+                "bbox": []
+            })
 
         return base64.b64encode(buffer).decode("utf-8"), predictions
 
     except Exception as e:
-        print("ERROR process_image:", e)
+        print("🔥 REAL ERROR:", e)
         return None, str(e)
 
     finally:
         gc.collect()
-
 
         
 # --- DATA INFORMASI (Tetap Sama) ---
@@ -290,9 +280,9 @@ def predict():
             # 1. Baca sebagai bytearray (mutable), lalu ubah ke Numpy Array
             # Ini lebih aman daripada np.frombuffer untuk file upload
             image_bytes = file.read()
-            processed_image, predictions = process_image(image_bytes)
+            processed_image, predictions = process_image_v2(image_bytes)
             
-            if processed_image:
+            if processed_image_v2:
                 return jsonify({
                     'success': True,
                     'image_url': f"data:image/jpeg;base64,{processed_image}",
@@ -312,3 +302,4 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
