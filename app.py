@@ -8,6 +8,10 @@ import uuid
 from flask import Flask, render_template, request, jsonify
 from werkzeug.utils import secure_filename
 from ultralytics import YOLO
+import numpy as np
+print("🔥 NUMPY VERSION:", np.__version__)
+assert np.__version__ == "1.26.4", f"NUMPY SALAH: {np.__version__}"
+
 
 # --- KONFIGURASI ENVIRONMENT ---
 os.environ['OPENCV_DISABLE_GUI'] = '1'
@@ -328,5 +332,6 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
