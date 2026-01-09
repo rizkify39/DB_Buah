@@ -60,11 +60,9 @@ def get_model():
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def process_image(image_path):
+def process_image(file_stream):
     """
-    PERBAIKAN V5: LETTERBOX RESIZE & LOWER THRESHOLD.
-    1. Menggunakan 'Letterbox' agar gambar tidak gepeng/distorsi.
-    2. Menurunkan threshold confidence agar pisang hitam terdeteksi.
+    MEMBACA DARI MEMORY (RAM) MENGGUNAKAN IMDECODE
     """
     model = get_model()
     if model is None:
@@ -72,47 +70,43 @@ def process_image(image_path):
     
     img_bgr = None
     tensor_img = None
-    results = None
     
     try:
-        # 1. Load Gambar
-        img_bgr = cv2.imread(image_path)
+        # --- PERBAIKAN DISINI: BACA LANGSUNG DARI BYTES ---
+        # Baca stream file ke array numpy
+        file_bytes = np.frombuffer(file_stream, np.uint8)
+        # Decode menjadi gambar OpenCV
+        img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        
         if img_bgr is None:
-            raise ValueError("Gagal membaca gambar")
+            raise ValueError("Gagal decode gambar (file korup/bukan gambar)")
 
-        # --- TEKNIK LETTERBOX (PENTING AGAR TIDAK GEPENG) ---
-        # Kita ingin resize ke MAX_IMAGE_SIZE tapi mempertahankan aspek rasio
-        target_size = 640  # YOLO standard training size (biasanya 640)
+        # --- TEKNIK LETTERBOX (LANJUTKAN SEPERTI BIASA) ---
+        target_size = 640 
         
         h, w = img_bgr.shape[:2]
         scale = min(target_size / h, target_size / w)
         new_w, new_h = int(w * scale), int(h * scale)
         
-        # Resize gambar asli
         img_resized = cv2.resize(img_bgr, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
         
-        # Buat Canvas kotak (Square) berwarna abu-abu (114)
-        # Ini standar YOLO biar model ga bingung
         canvas = np.full((target_size, target_size, 3), 114, dtype=np.uint8)
         
-        # Tempel gambar yang sudah di-resize ke tengah canvas
         dw = (target_size - new_w) // 2
         dh = (target_size - new_h) // 2
         canvas[dh:dh+new_h, dw:dw+new_w] = img_resized
 
-        # 2. Konversi ke Tensor (Manual Bypass Numpy Error)
+        # 2. Konversi ke Tensor
         img_rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB)
         tensor_img = torch.tensor(img_rgb, dtype=torch.float32)
-        tensor_img /= 255.0  # Normalize 0-1
-        tensor_img = tensor_img.permute(2, 0, 1) # HWC -> CHW
-        tensor_img = tensor_img.unsqueeze(0)     # Batch dim
+        tensor_img /= 255.0
+        tensor_img = tensor_img.permute(2, 0, 1)
+        tensor_img = tensor_img.unsqueeze(0)
 
         # 3. Prediksi
-        # Turunkan conf ke 0.25 (Standar YOLO) biar yang agak ragu tetap masuk dulu
         results = model(tensor_img, conf=0.25, verbose=False)
         result = results[0]
         
-        # Siapkan gambar output (pakai gambar asli, bukan canvas letterbox biar cantik di web)
         annotated_img = img_bgr.copy() 
         predictions = []
 
@@ -125,16 +119,13 @@ def process_image(image_path):
             class_name = model.names[class_id]
             label_text = f"{class_name} ({conf:.0%})"
             
-            # --- Visualisasi Label di Pojok Kiri Atas ---
-            # Kotak background hitam transparan
             overlay = annotated_img.copy()
             cv2.rectangle(overlay, (0, 0), (300, 60), (0, 0, 0), -1)
             alpha = 0.6
             cv2.addWeighted(overlay, alpha, annotated_img, 1 - alpha, 0, annotated_img)
             
-            # Teks
             cv2.putText(annotated_img, label_text, (15, 40), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
             
             predictions.append({
                 'class': class_name,
@@ -158,8 +149,8 @@ def process_image(image_path):
     
     except Exception as e:
         print(f"Processing Error: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        # import traceback
+        # traceback.print_exc()
         return None, f"Error memproses gambar: {str(e)}"
     
     finally:
@@ -301,21 +292,13 @@ def predict():
         return jsonify({'success': False, 'error': 'Tidak ada file'})
     
     if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         try:
-            file.save(filepath)
+            # --- PERBAIKAN DISINI ---
+            # Baca file langsung dari memory (tidak perlu save ke folder upload)
+            file_bytes = file.read() 
             
-            # --- MASUK KE PROSES TENSOR MANUAL ---
-            processed_image, predictions = process_image(filepath)
+            processed_image, predictions = process_image(file_bytes)
             
-            # Hapus file setelah proses
-            try:
-                if os.path.exists(filepath):
-                    os.remove(filepath)
-            except:
-                pass
-
             if processed_image:
                 return jsonify({
                     'success': True,
@@ -328,10 +311,11 @@ def predict():
             return jsonify({'success': False, 'error': str(e)})
     
     return jsonify({'success': False, 'error': 'Format file invalid'})
-
+    
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
 
