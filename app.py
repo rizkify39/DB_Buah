@@ -274,15 +274,13 @@ def predict():
     
     if file and allowed_file(file.filename):
         try:
-            # --- CARA BACA FILE PALING AMAN (ANTI ERROR) ---
-            file.seek(0) # Reset pointer
-            
-            # 1. Baca sebagai bytearray (mutable), lalu ubah ke Numpy Array
-            # Ini lebih aman daripada np.frombuffer untuk file upload
+            file.seek(0)
             image_bytes = file.read()
-            processed_image, predictions = processed_image_v2(image_bytes)
-            
-            if processed_image_v2:
+
+            # 🔥 FIXED
+            processed_image, predictions = process_image_v2(image_bytes)
+
+            if processed_image:
                 return jsonify({
                     'success': True,
                     'image_url': f"data:image/jpeg;base64,{processed_image}",
@@ -292,7 +290,6 @@ def predict():
                 return jsonify({'success': False, 'error': predictions})
                 
         except Exception as e:
-            print(f"ERROR SYSTEM: {e}")
             import traceback
             traceback.print_exc()
             return jsonify({'success': False, 'error': str(e)})
@@ -302,5 +299,6 @@ def predict():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)
+
 
 
